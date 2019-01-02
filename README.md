@@ -1,5 +1,5 @@
 # !!! This fork is intended to be used with Arcadia !!!
-Since (Arcadia)[https://github.com/arcadia-unity/Arcadia] runs on CLR there are some things that needed to be changed in Monroe in order for e.g. jump to definiton to work. Arcadia in turn has some quirks that makes it useful to have a fork dedicated completely to Arcadia (if nothing else because I'm not using ClojureCLR outside of Arcadia).
+Since [Arcadia](https://github.com/arcadia-unity/Arcadia) runs on CLR there are some things that needed to be changed in Monroe in order for e.g. jump to definiton to work. Arcadia in turn has some quirks that makes it useful to have a fork dedicated completely to Arcadia (if nothing else because I'm not using ClojureCLR outside of Arcadia).
 
 # Monroe - Clojure nREPL client for Emacs
 
