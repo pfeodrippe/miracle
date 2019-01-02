@@ -122,6 +122,10 @@ to the one used on nrepl side.")
 
 (defvar monroe-nrepl-server-project-file "project.clj")
 
+(defvar *monroe-project-path* nil
+  "This is set to the running path of the nREPL server
+that monroe is is connected to.")
+
 (make-variable-buffer-local 'monroe-session)
 (make-variable-buffer-local 'monroe-requests)
 (make-variable-buffer-local 'monroe-requests-counter)
@@ -179,12 +183,12 @@ to the one used on nrepl side.")
 'd<key-len>:key<val-len>:value<key-len>:key<val-len>:valuee', where the message is
 starting with 'd' and ending with 'e'."
   (concat "d"
-    (apply 'concat
-      (mapcar (lambda (str)
-                (let ((s (if str str "")))
-                  (format "%d:%s" (string-bytes s) s)))
-              message))
-    "e"))
+          (apply 'concat
+                 (mapcar (lambda (str)
+                           (let ((s (if str str "")))
+                             (format "%d:%s" (string-bytes s) s)))
+                         message))
+          "e"))
 
 (defun monroe-decode (str)
   "Decode message using temporary buffer."
@@ -254,30 +258,30 @@ the operations supported by an nREPL endpoint."
 
 (defun monroe-make-response-handler ()
   "Returns a function that will be called when event is received."
-   (lambda (response)
-     (monroe-dbind-response response (id ns value err out ex root-ex status)
-       (let ((output (concat err out
-                             (if value
-                               (concat value "\n"))))
-             (process (get-buffer-process monroe-repl-buffer)))
-         ;; update namespace if needed
-         (if ns (setq monroe-buffer-ns ns))
-         (comint-output-filter process output)
-         ;; now handle status
-         (when status
-           (when (and monroe-detail-stacktraces (member "eval-error" status))
-             (monroe-get-stacktrace))
-           (when (member "eval-error" status)
-             (message root-ex))
-           (when (member "interrupted" status)
-             (message "Evaluation interrupted."))
-           (when (member "need-input" status)
-             (monroe-handle-input))
-           (when (member "done" status)
-             (remhash id monroe-requests)))
-         ;; show prompt only when no output is given in any of received vars
-         (unless (or err out value root-ex ex)
-           (comint-output-filter process (format monroe-repl-prompt-format monroe-buffer-ns)))))))
+  (lambda (response)
+    (monroe-dbind-response response (id ns value err out ex root-ex status)
+                           (let ((output (concat err out
+                                                 (if value
+                                                     (concat value "\n"))))
+                                 (process (get-buffer-process monroe-repl-buffer)))
+                             ;; update namespace if needed
+                             (if ns (setq monroe-buffer-ns ns))
+                             (comint-output-filter process output)
+                             ;; now handle status
+                             (when status
+                               (when (and monroe-detail-stacktraces (member "eval-error" status))
+                                 (monroe-get-stacktrace))
+                               (when (member "eval-error" status)
+                                 (message root-ex))
+                               (when (member "interrupted" status)
+                                 (message "Evaluation interrupted."))
+                               (when (member "need-input" status)
+                                 (monroe-handle-input))
+                               (when (member "done" status)
+                                 (remhash id monroe-requests)))
+                             ;; show prompt only when no output is given in any of received vars
+                             (unless (or err out value root-ex ex)
+                               (comint-output-filter process (format monroe-repl-prompt-format monroe-buffer-ns)))))))
 
 (defun monroe-input-sender (proc input)
   "Called when user enter data in REPL and when something is received in."
@@ -298,10 +302,10 @@ the operations supported by an nREPL endpoint."
 (defun monroe-dispatch (msg)
   "Find associated callback for a message by id or by op."
   (monroe-dbind-response msg (id op)
-    (let ((callback (or (gethash id monroe-requests)
-                        (gethash op monroe-custom-handlers))))
-      (when callback
-        (funcall callback msg)))))
+                         (let ((callback (or (gethash id monroe-requests)
+                                             (gethash op monroe-custom-handlers))))
+                           (when callback
+                             (funcall callback msg)))))
 
 (defun monroe-net-decode ()
   "Decode the data in the current buffer and remove the processed data from the
@@ -337,15 +341,17 @@ monroe-repl-buffer."
   "Returns callback that is called when new connection is established."
   (lambda (response)
     (monroe-dbind-response response (id new-session)
-      (when new-session
-        (message "Connected.")
-        (setq monroe-session new-session)
-        (remhash id monroe-requests)))))
+                           (when new-session
+                             (message "Connected.")
+                             (setq monroe-session new-session)
+                             (remhash id monroe-requests)
+                             (sit-for 0.1) ;; Don't ask me, didn't work without it
+                             (run-hooks 'monroe-connected-hook)))))
 
 (defun monroe-valid-host-string (str default)
   "Used for getting valid string for host/port part."
   (if (and str (not (string= "" str)))
-    str
+      str
     default))
 
 (defun monroe-locate-port-file ()
@@ -447,37 +453,36 @@ inside a container.")
 
 (defun monroe-jump-find-file (file)
   "Internal function to find a file on the disk or inside a jar."
-  (if (not (string-match "^jar:file:\\(.+\\)!\\(.+\\)" file))
-      (find-file (substring file 5))
-    (let* ((jar (match-string 1 file))
-           (clj (match-string 2 file))
-           (already-open (get-buffer (file-name-nondirectory jar))))
-      (find-file jar)
-      (goto-char (point-min))
-      (search-forward-regexp (concat " " (substring clj 1) "$"))
-      (let ((archive-buffer (current-buffer)))
-        (declare-function archive-extract "arc-mode")
-        (archive-extract)
-        (when (not already-open)
-          (kill-buffer archive-buffer))))))
+  (if (string-match "^clojure\\|^arcadia" file)
+      (find-file (concat *monroe-project-path* "/Assets/Arcadia/Source/" file))
+    (find-file file)))
 
 (defun monroe-eval-jump (ns var)
   "Internal function to actually ask for var location via nrepl protocol."
-  (monroe-send-eval-string
-   (format "%s" `((juxt (comp str clojure.java.io/resource :file) :line)
-                  (meta ,(if ns `(ns-resolve ',(intern ns) ',(intern var))
-                           `(resolve ',(intern var))))))
-   (lambda (response)
-     (monroe-dbind-response response (id value status)
-       (when (member "done" status)
-         (remhash id monroe-requests))
-       (when value
-         (destructuring-bind (file line)
-             (append (car (read-from-string value)) nil)
-           (monroe-jump-find-file (funcall monroe-translate-path-function file))
-           (when line
-             (goto-char (point-min))
-             (forward-line (1- line)))))))))
+  (lexical-let
+      ((var var))
+    (monroe-send-eval-string
+     (format "%s" `((juxt :file :line)
+                    (meta ,(if ns `(ns-resolve ',(intern ns) ',(intern var))
+                             `(resolve ',(intern var))))))
+     (lambda (response)
+       (monroe-dbind-response
+        response (id value status)
+        (when (member "done" status)
+          (remhash id monroe-requests))
+        (when value
+          (destructuring-bind (file line)
+              (append (car (read-from-string value)) nil)
+            (if file
+                (monroe-jump-find-file (funcall monroe-translate-path-function file))
+              (when line
+                (goto-char (point-min))
+                (forward-line (1- line)))
+              (message "%s" 
+                       (concat 
+                        (propertize "Symbol " 'face 'font-lock-warning-face)
+                        (propertize var 'face 'font-lock-variable-name-face)
+                        (propertize " not found." 'face 'font-lock-warning-face)))))))))))
 
 (defun monroe-get-stacktrace ()
   "When error happens, print the stack trace"
@@ -497,7 +502,7 @@ inside a container.")
            (sym (if sym (substring-no-properties sym)))
            (prompt "Describe")
            (prompt (if sym
-                     (format "%s (default %s): " prompt sym)
+                       (format "%s (default %s): " prompt sym)
                      (concat prompt ": "))))
       (read-string prompt nil nil sym))))
   (monroe-eval-doc symbol))
@@ -606,7 +611,7 @@ The following keys are available in `monroe-mode':
   (setq comint-prompt-regexp monroe-prompt-regexp)
   (setq comint-input-sender 'monroe-input-sender)
   (setq mode-line-process '(":%s"))
-  ;(set (make-local-variable 'font-lock-defaults) '(clojure-font-lock-keywords t))
+                                        ;(set (make-local-variable 'font-lock-defaults) '(clojure-font-lock-keywords t))
 
   ;; a hack to keep comint happy
   (unless (comint-check-proc (current-buffer))
@@ -628,8 +633,23 @@ The following keys are available in `monroe-mode':
 The following keys are available in `monroe-interaction-mode`:
 
   \\{monroe-interaction-mode}"
-
+  
   nil " Monroe" monroe-interaction-mode-map)
+
+(defun monroe-set-project-path ()
+  "Sets *monroe-project-path* to the path of the project
+the nREPL server monroe connected to was started in."
+  (interactive)
+  (monroe-send-eval-string
+   (format "%s" `(.. (clojure.clr.io/as-file \".\") FullName))
+   (lambda (response) 
+     (monroe-dbind-response response (id value status)
+                            (when (member "done" status)
+                              (remhash id monroe-requests))
+                            (when value
+                              (setq *monroe-project-path* (read value)))))))
+
+(add-hook 'monroe-connected-hook 'monroe-set-project-path)
 
 ;;;###autoload
 (defun monroe (host-and-port)
