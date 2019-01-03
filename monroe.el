@@ -474,10 +474,10 @@ inside a container.")
           (destructuring-bind (file line)
               (append (car (read-from-string value)) nil)
             (if file
-                (monroe-jump-find-file (funcall monroe-translate-path-function file))
-              (when line
-                (goto-char (point-min))
-                (forward-line (1- line)))
+                (progn (monroe-jump-find-file (funcall monroe-translate-path-function file))
+                       (when line
+                         (goto-char (point-min))
+                         (forward-line (1- line))))
               (message "%s" 
                        (concat 
                         (propertize "Symbol " 'face 'font-lock-warning-face)
@@ -573,6 +573,19 @@ as path can be remote location. For remote paths, use absolute path."
   (dolist (id (monroe-extract-keys monroe-requests))
     (monroe-send-interrupt id (monroe-make-response-handler))))
 
+(defun monroe-set-project-path ()
+  "Sets *monroe-project-path* to the path of the project
+the nREPL server monroe connected to was started in."
+  (interactive)
+  (monroe-send-eval-string
+   (format "%s" `(.. (clojure.clr.io/as-file \".\") FullName))
+   (lambda (response) 
+     (monroe-dbind-response response (id value status)
+                            (when (member "done" status)
+                              (remhash id monroe-requests))
+                            (when value
+                              (setq *monroe-project-path* (read value)))))))
+
 ;; keys for interacting with Monroe REPL buffer
 (defvar monroe-interaction-mode-map
   (let ((map (make-sparse-keymap)))
@@ -606,13 +619,13 @@ as path can be remote location. For remote paths, use absolute path."
 The following keys are available in `monroe-mode':
 
   \\{monroe-mode-map}"
-
+  
   :syntax-table lisp-mode-syntax-table
   (setq comint-prompt-regexp monroe-prompt-regexp)
   (setq comint-input-sender 'monroe-input-sender)
   (setq mode-line-process '(":%s"))
                                         ;(set (make-local-variable 'font-lock-defaults) '(clojure-font-lock-keywords t))
-
+  
   ;; a hack to keep comint happy
   (unless (comint-check-proc (current-buffer))
     (let ((fake-proc (start-process "monroe" (current-buffer) nil)))
@@ -635,19 +648,6 @@ The following keys are available in `monroe-interaction-mode`:
   \\{monroe-interaction-mode}"
   
   nil " Monroe" monroe-interaction-mode-map)
-
-(defun monroe-set-project-path ()
-  "Sets *monroe-project-path* to the path of the project
-the nREPL server monroe connected to was started in."
-  (interactive)
-  (monroe-send-eval-string
-   (format "%s" `(.. (clojure.clr.io/as-file \".\") FullName))
-   (lambda (response) 
-     (monroe-dbind-response response (id value status)
-                            (when (member "done" status)
-                              (remhash id monroe-requests))
-                            (when value
-                              (setq *monroe-project-path* (read value)))))))
 
 (add-hook 'monroe-connected-hook 'monroe-set-project-path)
 
