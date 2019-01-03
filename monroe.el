@@ -39,6 +39,7 @@
 ;;; Code:
 
 (require 'comint)
+(require 'subr-x)
 (eval-when-compile
   (require 'cl))
 
@@ -256,6 +257,46 @@ the operations supported by an nREPL endpoint."
 
 ;;; code
 
+(defconst monroe-namespace-name-regex
+  (rx line-start
+      "("
+      (zero-or-one (group (regexp "clojure.core/")))
+      (zero-or-one (submatch "in-"))
+      "ns"
+      (zero-or-one "+")
+      (one-or-more (any whitespace "\n" ""))
+      (zero-or-more (or (submatch (zero-or-one "#")
+                                  "^{"
+                                  (zero-or-more (not (any "}")))
+                                  "}")
+                        (zero-or-more "^:"
+                                      (one-or-more (not (any whitespace)))))
+                    (one-or-more (any whitespace "\n" "")))
+      (zero-or-one (any ":'")) ;; (in-ns 'foo) or (ns+ :user)
+      (group (one-or-more (not (any "()\"" whitespace))) symbol-end)))
+
+(defun monroe-find-ns ()
+  "Return the namespace of the current Clojure buffer.
+Return the namespace closest to point and above it.  If there are
+no namespaces above point, return the first one in the buffer.
+
+This has been taken from `clojure-mode` and modified to handle the
+mixed newlines of the clojure core packages."
+  (let ((ns (save-excursion
+              (save-restriction
+                (widen)
+                
+                ;; Move to top-level to avoid searching from inside ns
+                (ignore-errors (while t (up-list nil t t)))
+                
+                ;; The closest ns form above point.
+                (when (or (re-search-backward monroe-namespace-name-regex nil t)
+                          ;; Or any form at all.
+                          (and (goto-char (point-min))
+                               (re-search-forward monroe-namespace-name-regex nil t)))
+                  (match-string-no-properties 4))))))
+    ns))
+
 (defun monroe-make-response-handler ()
   "Returns a function that will be called when event is received."
   (lambda (response)
@@ -434,8 +475,7 @@ expression at the beginning of the file and evaluating it. Not something
 that is 100% accurate, but Clojure practice is to keep ns forms always
 at the top of the file."
   (interactive)
-  (when (and (fboundp 'clojure-find-ns)
-             (funcall 'clojure-find-ns))
+  (when (monroe-find-ns)
     (save-excursion
       (goto-char (match-beginning 0))
       (monroe-eval-defun))))
@@ -460,7 +500,8 @@ inside a container.")
 (defun monroe-eval-jump (ns var)
   "Internal function to actually ask for var location via nrepl protocol."
   (lexical-let
-      ((var var))
+      ((ns ns)
+       (var var))
     (monroe-send-eval-string
      (format "%s" `((juxt :file :line)
                     (meta ,(if ns `(ns-resolve ',(intern ns) ',(intern var))
@@ -468,8 +509,6 @@ inside a container.")
      (lambda (response)
        (monroe-dbind-response
         response (id value status)
-        (when (member "done" status)
-          (remhash id monroe-requests))
         (when value
           (destructuring-bind (file line)
               (append (car (read-from-string value)) nil)
@@ -480,9 +519,8 @@ inside a container.")
                          (forward-line (1- line))))
               (message "%s" 
                        (concat 
-                        (propertize "Symbol " 'face 'font-lock-warning-face)
-                        (propertize var 'face 'font-lock-variable-name-face)
-                        (propertize " not found." 'face 'font-lock-warning-face)))))))))))
+                        (propertize "Couldn't find symbol: " 'face 'font-lock-warning-face)
+                        (propertize (concat var (when ns (concat " (in " ns ")"))) 'face 'font-lock-variable-name-face)))))))))))
 
 (defun monroe-get-stacktrace ()
   "When error happens, print the stack trace"
@@ -530,8 +568,7 @@ as path can be remote location. For remote paths, use absolute path."
   (defvar find-tag-marker-ring) ;; etags.el
   (require 'etags)
   (ring-insert find-tag-marker-ring (point-marker))
-  (monroe-eval-jump (and (fboundp 'clojure-find-ns)
-                         (funcall 'clojure-find-ns)) var))
+  (monroe-eval-jump (monroe-find-ns) var))
 
 (defun monroe-jump-pop ()
   "Return point to the position and buffer before running `monroe-jump'."
