@@ -38,15 +38,16 @@ Make sure you have `clojure-mode.el` installed first. You can get it
 from Marmalade repository, melpa or directly from
 [here](https://github.com/clojure-emacs/clojure-mode).
 
-Clone this repository, it's currently not on melpa.
+Clone this repository into .emacs.d, it's currently not on melpa.
+```sh
+cd ~/.emacs.d
+git clone https://github.com/Saikyun/miracle.git
+```
 
-Move `marilyn.el` file to `$HOME/.emacs.d` folder or any other location listed in Emacs `load-path` variable, or clone the repository into emacs and add the miracle folder to the `load-path`, eg by following the guide [here](http://ergoemacs.org/emacs/emacs_installing_packages.html#Load%20File%20at%20Startup) (look under the header *Load File at Startup*.
-
-In your
-[Emacs init file](https://www.gnu.org/software/emacs/manual/html_node/emacs/Init-File.html),
-put:
+In your [Emacs init file](https://www.gnu.org/software/emacs/manual/html_node/emacs/Init-File.html), put:
 
 ```el
+(add-to-list 'load-path "~/.emacs.d/miracle")
 (require 'miracle)
 (add-hook 'clojure-mode-hook 'clojure-enable-miracle)
 ```
@@ -55,7 +56,7 @@ Then, in Emacs:
 
 <kbd>M-x miracle [RET]</kbd>
 
-and follow the question about nREPL server location and port.
+and follow the question about nREPL server location and port. The defaults are the same as Arcadia's defaults.
 
 ### Starting the nREPL server
 
