@@ -52,43 +52,15 @@ In your [Emacs init file](https://www.gnu.org/software/emacs/manual/html_node/em
 (add-hook 'clojure-mode-hook 'clojure-enable-miracle)
 ```
 
+Then either evaluate the rows or restart Emacs.
+
+Start an Arcadia project in Unity.
+
 Then, in Emacs:
 
 <kbd>M-x miracle [RET]</kbd>
 
 and follow the question about nREPL server location and port. The defaults are the same as Arcadia's defaults.
-
-### Starting the nREPL server
-
-You can start the nREPL server straight from Emacs by running:
-
-<kbd>M-x miracle-nrepl-server-start [RET]</kbd>
-
-and then connect as above.
-By default Miracle will start Leiningen REPL with command:
-
-`lein trampoline repl :headless`
-
-You can override this by setting the following variables:
-
-- `miracle-nrepl-server-cmd` - defaults to `lein`
-- `miracle-nrepl-server-cmd-args` - defaults to `trampoline repl :headless`
-- `miracle-nrepl-server-project-file` - defaults to `project.clj` - this is used
-   for finding your project's root and launching the REPL process in that location
-
-#### Boot configuration
-
-(*Note*: these are not verified!)
-
-For boot, set the following in your `init.el`:
-
-
-```elisp
-(setq miracle-nrepl-server-cmd "boot")
-(setq miracle-nrepl-server-cmd-args "repl -S")
-(setq miracle-nrepl-server-project-file "build.boot")
-```
-
 
 ## Keys and shortcuts
 
