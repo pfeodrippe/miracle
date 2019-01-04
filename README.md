@@ -1,7 +1,6 @@
 _It takes a Miracle to reach Arcadia_
 
-# Miracle - An Arcadia opiniated fork of monroe, the nREPL client
-
+# Miracle - an Arcadia nREPL client
 Miracle is a fork of [Monroe](https://github.com/sanel/monroe), which in turn is a nREPL client for Emacs. Miracle is meant to be used with ClojureCLR in general, and Arcadia in particular.
 
 Since [Arcadia](https://github.com/arcadia-unity/Arcadia) runs on CLR there are some things that needed to be changed in Monroe in order for e.g. jump to definiton to work.
