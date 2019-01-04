@@ -1,4 +1,4 @@
-# monroe.el --- Yet another client for nREPL
+# miracle.el --- An Arcadia opiniated fork of monroe, the nREPL client
 #
 # Copyright (c) 2014-2018 Sanel Zukan
 #
@@ -18,7 +18,7 @@
 .PHONY: clean compile
 
 EMACS  ?= emacs
-FILES  ?= monroe.el
+FILES  ?= miracle.el
 STRICT ?= --eval '(setq byte-compile-error-on-warn t)'
 
 %.elc:%.el

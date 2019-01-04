@@ -1,10 +1,10 @@
 ;;; -*- indent-tabs-mode: nil -*-
-;;; monroe.el --- Yet another client for nREPL
+;;; miracle.el --- An Arcadia opiniated fork of monroe, the nREPL client
 
 ;; Copyright (c) 2014-2018 Sanel Zukan
 ;;
-;; Author: Sanel Zukan <sanelz@gmail.com>
-;; URL: http://www.github.com/sanel/monroe
+;; Author: Jona Ekenberg <saikyun@gmail.com>
+;; URL: http://www.github.com/Saikyun/miracle
 ;; Version: 0.4.0
 ;; Keywords: languages, clojure, nrepl, lisp
 
@@ -25,16 +25,16 @@
 
 ;;; Commentary:
 
-;; Provides yet another elisp client to connect to Clojure nREPL servers.
+;; An arcadia opiniated fork of monroe, the nREPL client.
 
 ;;; Installation:
 
 ;; Copy it to your load-path and run with:
-;; M-: (require 'monroe)
+;; M-: (require 'miracle)
 
 ;;; Usage:
 
-;; M-x monroe
+;; M-x miracle
 
 ;;; Code:
 
@@ -43,100 +43,100 @@
 (eval-when-compile
   (require 'cl))
 
-(defgroup monroe nil
+(defgroup miracle nil
   "Interaction with the nREPL Server."
-  :prefix "monroe-"
+  :prefix "miracle-"
   :group 'applications)
 
-(defcustom monroe-repl-prompt-format "%s=> "
+(defcustom miracle-repl-prompt-format "%s=> "
   "String used for displaying prompt. '%s' is used as
 placeholder for storing current namespace."
   :type 'string
-  :group 'monroe)
+  :group 'miracle)
 
-(defcustom monroe-prompt-regexp "^[^> \n]*>+:? *"
-  "Regexp to recognize prompts in Monroe more. The same regexp is
+(defcustom miracle-prompt-regexp "^[^> \n]*>+:? *"
+  "Regexp to recognize prompts in Miracle more. The same regexp is
 used in inferior-lisp."
   :type 'regexp
-  :group 'monroe)
+  :group 'miracle)
 
-(defcustom monroe-default-host "localhost:7888"
+(defcustom miracle-default-host "localhost:3722"
   "Default location where to connect to, unless explicitly given
 location and port. Location and port should be delimited with ':'."
   :type 'string
-  :group 'monroe)
+  :group 'miracle)
 
-(defcustom monroe-detail-stacktraces nil
-  "If set to true, Monroe will try to get full stacktrace from thrown
+(defcustom miracle-detail-stacktraces nil
+  "If set to true, Miracle will try to get full stacktrace from thrown
 exception. Otherwise will just behave as standard REPL version."
   :type 'boolean
-  :group 'monroe)
+  :group 'miracle)
 
-(defcustom monroe-old-style-stacktraces nil
-  "If set to true, Monroe will try to emit old style Clojure stacktraces
+(defcustom miracle-old-style-stacktraces nil
+  "If set to true, Miracle will try to emit old style Clojure stacktraces
 using 'clojure.stacktrace/print-stack-trace'. This will work on older Clojure versions (e.g. 1.2)
-but will NOT work on ClojureScript. This option assumes 'monroe-detail-stacktraces' is true.
+but will NOT work on ClojureScript. This option assumes 'miracle-detail-stacktraces' is true.
 
-DEPRECATED; use monroe-print-stack-trace-function instead."
+DEPRECATED; use miracle-print-stack-trace-function instead."
   :type 'boolean
-  :group 'monroe)
+  :group 'miracle)
 
-(defcustom monroe-print-stack-trace-function nil
+(defcustom miracle-print-stack-trace-function nil
   "Set to a clojure-side function in order to override stack-trace printing.
 
-Will be called upon error when `monroe-detail-stacktraces' is non-nil.
+Will be called upon error when `miracle-detail-stacktraces' is non-nil.
 
 e.g. 'clojure.stacktrace/print-stack-trace for old-style stack traces."
   :type 'symbol
-  :group 'monroe)
+  :group 'miracle)
 
-(defvar monroe-version "0.4.0"
-  "The current monroe version.")
+(defvar miracle-version "0.4.0"
+  "The current miracle version.")
 
-(defvar monroe-session nil
+(defvar miracle-session nil
   "Current nREPL session id.")
 
-(defvar monroe-requests (make-hash-table :test 'equal)
+(defvar miracle-requests (make-hash-table :test 'equal)
   "Map of requests to be processed.")
 
-(defvar monroe-requests-counter 0
+(defvar miracle-requests-counter 0
   "Serial number for message.")
 
-(defvar monroe-custom-handlers (make-hash-table :test 'equal)
+(defvar miracle-custom-handlers (make-hash-table :test 'equal)
   "Map of handlers for custom ops.")
 
-(defvar monroe-repl-buffer "*monroe*"
+(defvar miracle-repl-buffer "*miracle*"
   "Name of nREPL buffer.")
 
-(defvar monroe-buffer-ns "user"
+(defvar miracle-buffer-ns "user"
   "Current clojure namespace for this buffer. This namespace
 is only advertised until first expression is evaluated, then is updated
 to the one used on nrepl side.")
 
-(defvar monroe-nrepl-server-cmd "lein"
+(defvar miracle-nrepl-server-cmd "lein"
   "Command to start nrepl server. Defaults to Leiningen")
 
-(defvar monroe-nrepl-server-cmd-args "trampoline repl :headless"
+(defvar miracle-nrepl-server-cmd-args "trampoline repl :headless"
   "Arguments to pass to the nrepl command. Defaults to 'trampoline repl :headless'")
 
-(defvar monroe-nrepl-server-buffer-name "monroe nrepl server")
+(defvar miracle-nrepl-server-buffer-name "miracle nrepl server")
 
-(defvar monroe-nrepl-server-project-file "project.clj")
+(defvar miracle-nrepl-server-project-file "project.clj")
 
-(defvar *monroe-project-path* nil
+(defvar *miracle-project-path* nil
   "This is set to the running path of the nREPL server
-that monroe is is connected to.")
+that miracle is is connected to.")
 
-(make-variable-buffer-local 'monroe-session)
-(make-variable-buffer-local 'monroe-requests)
-(make-variable-buffer-local 'monroe-requests-counter)
-(make-variable-buffer-local 'monroe-buffer-ns)
+(make-variable-buffer-local 'miracle-session)
+(make-variable-buffer-local 'miracle-requests)
+(make-variable-buffer-local 'miracle-requests-counter)
+(make-variable-buffer-local 'miracle-buffer-ns)
 
 ;;; message stuff
 
 ;; Idea for message handling (via callbacks) and destructuring response is shamelessly
 ;; stolen from nrepl.el.
-(defmacro monroe-dbind-response (response keys &rest body)
+(defmacro miracle-dbind-response (response keys &rest body)
   "Destructure an nREPL response dict."
   `(let ,(loop for key in keys
                collect `(,key (cdr (assoc ,(format "%s" key) ,response))))
@@ -144,7 +144,7 @@ that monroe is is connected to.")
 
 ;;; Bencode
 ;;; Stolen from nrepl.el which is adapted from http://www.emacswiki.org/emacs-en/bencode.el
-(defun monroe-bdecode-buffer ()
+(defun miracle-bdecode-buffer ()
   "Decode a bencoded string in the current buffer starting at point."
   (cond
    ((looking-at "i\\([-0-9]+\\)e")
@@ -159,13 +159,13 @@ that monroe is is connected to.")
    ((looking-at "l")
     (goto-char (match-end 0))
     (let (result item)
-      (while (setq item (monroe-bdecode-buffer))
+      (while (setq item (miracle-bdecode-buffer))
         (setq result (cons item result)))
       (nreverse result)))
    ((looking-at "d")
     (goto-char (match-end 0))
     (let (dict key item)
-      (while (setq item (monroe-bdecode-buffer))
+      (while (setq item (miracle-bdecode-buffer))
         (if key
             (setq dict (cons (cons key item) dict)
                   key nil)
@@ -179,7 +179,7 @@ that monroe is is connected to.")
    (t
     (error "Cannot decode object: %d" (point)))))
 
-(defun monroe-encode (message)
+(defun miracle-encode (message)
   "Encode message to nrepl format. The message format is
 'd<key-len>:key<val-len>:value<key-len>:key<val-len>:valuee', where the message is
 starting with 'd' and ending with 'e'."
@@ -191,73 +191,73 @@ starting with 'd' and ending with 'e'."
                          message))
           "e"))
 
-(defun monroe-decode (str)
+(defun miracle-decode (str)
   "Decode message using temporary buffer."
   (with-temp-buffer
     (save-excursion (insert str))
     (let ((result '()))
       (while (not (eobp))
-        (setq result (cons (monroe-bdecode-buffer) result)))
+        (setq result (cons (miracle-bdecode-buffer) result)))
       (nreverse result))))
 
-(defun monroe-write-message (process message)
+(defun miracle-write-message (process message)
   "Send message to given process."
   (process-send-string process message))
 
-(defun monroe-send-request (request callback)
+(defun miracle-send-request (request callback)
   "Send request as elisp object and assign callback to
 be called when reply is received."
-  (let* ((id       (number-to-string (incf monroe-requests-counter)))
+  (let* ((id       (number-to-string (incf miracle-requests-counter)))
          (message  (append (list "id" id) request))
-         (bmessage (monroe-encode message)))
-    (puthash id callback monroe-requests)
-    (monroe-write-message "*monroe-connection*" bmessage)))
+         (bmessage (miracle-encode message)))
+    (puthash id callback miracle-requests)
+    (miracle-write-message "*miracle-connection*" bmessage)))
 
-(defun monroe-clear-request-table ()
+(defun miracle-clear-request-table ()
   "Erases current request table."
-  (clrhash monroe-requests)
-  (setq monroe-requests-counter 0))
+  (clrhash miracle-requests)
+  (setq miracle-requests-counter 0))
 
-(defun monroe-current-session ()
+(defun miracle-current-session ()
   "Returns current session id."
-  (with-current-buffer "*monroe-connection*"
-    monroe-session))
+  (with-current-buffer "*miracle-connection*"
+    miracle-session))
 
 ;;; nrepl messages we knows about
 
-(defun monroe-send-hello (callback)
+(defun miracle-send-hello (callback)
   "Initiate nREPL session."
-  (monroe-send-request '("op" "clone") callback))
+  (miracle-send-request '("op" "clone") callback))
 
-(defun monroe-send-describe (callback)
+(defun miracle-send-describe (callback)
   "Produce a machine- and human-readable directory and documentation for
 the operations supported by an nREPL endpoint."
-  (monroe-send-request '("op" "describe") callback))
+  (miracle-send-request '("op" "describe") callback))
 
-(defun monroe-send-eval-string (str callback)
+(defun miracle-send-eval-string (str callback)
   "Send code for evaluation on given namespace."
-  (monroe-send-request (list "op" "eval"
-                             "session" (monroe-current-session)
-                             "code" str)
-                       callback))
+  (miracle-send-request (list "op" "eval"
+                              "session" (miracle-current-session)
+                              "code" str)
+                        callback))
 
-(defun monroe-send-stdin (str callback)
+(defun miracle-send-stdin (str callback)
   "Send stdin value."
-  (monroe-send-request (list "op" "stdin"
-                             "session" (monroe-current-session)
-                             "stdin" str)
-                       callback))
+  (miracle-send-request (list "op" "stdin"
+                              "session" (miracle-current-session)
+                              "stdin" str)
+                        callback))
 
-(defun monroe-send-interrupt (request-id callback)
+(defun miracle-send-interrupt (request-id callback)
   "Send interrupt for pending requests."
-  (monroe-send-request (list "op" "interrupt"
-                             "session" (monroe-current-session)
-                             "interrupt-id" request-id)
-                       callback))
+  (miracle-send-request (list "op" "interrupt"
+                              "session" (miracle-current-session)
+                              "interrupt-id" request-id)
+                        callback))
 
 ;;; code
 
-(defconst monroe-namespace-name-regex
+(defconst miracle-namespace-name-regex
   (rx line-start
       "("
       (zero-or-one (group (regexp "clojure.core/")))
@@ -275,7 +275,7 @@ the operations supported by an nREPL endpoint."
       (zero-or-one (any ":'")) ;; (in-ns 'foo) or (ns+ :user)
       (group (one-or-more (not (any "()\"" whitespace))) symbol-end)))
 
-(defun monroe-find-ns ()
+(defun miracle-find-ns ()
   "Return the namespace of the current Clojure buffer.
 Return the namespace closest to point and above it.  If there are
 no namespaces above point, return the first one in the buffer.
@@ -290,78 +290,78 @@ mixed newlines of the clojure core packages."
                 (ignore-errors (while t (up-list nil t t)))
                 
                 ;; The closest ns form above point.
-                (when (or (re-search-backward monroe-namespace-name-regex nil t)
+                (when (or (re-search-backward miracle-namespace-name-regex nil t)
                           ;; Or any form at all.
                           (and (goto-char (point-min))
-                               (re-search-forward monroe-namespace-name-regex nil t)))
+                               (re-search-forward miracle-namespace-name-regex nil t)))
                   (match-string-no-properties 4))))))
     ns))
 
-(defun monroe-make-response-handler ()
+(defun miracle-make-response-handler ()
   "Returns a function that will be called when event is received."
   (lambda (response)
-    (monroe-dbind-response response (id ns value err out ex root-ex status)
-                           (let ((output (concat err out
-                                                 (if value
-                                                     (concat value "\n"))))
-                                 (process (get-buffer-process monroe-repl-buffer)))
-                             ;; update namespace if needed
-                             (if ns (setq monroe-buffer-ns ns))
-                             (comint-output-filter process output)
-                             ;; now handle status
-                             (when status
-                               (when (and monroe-detail-stacktraces (member "eval-error" status))
-                                 (monroe-get-stacktrace))
-                               (when (member "eval-error" status)
-                                 (message root-ex))
-                               (when (member "interrupted" status)
-                                 (message "Evaluation interrupted."))
-                               (when (member "need-input" status)
-                                 (monroe-handle-input))
-                               (when (member "done" status)
-                                 (remhash id monroe-requests)))
-                             ;; show prompt only when no output is given in any of received vars
-                             (unless (or err out value root-ex ex)
-                               (comint-output-filter process (format monroe-repl-prompt-format monroe-buffer-ns)))))))
+    (miracle-dbind-response response (id ns value err out ex root-ex status)
+                            (let ((output (concat err out
+                                                  (if value
+                                                      (concat value "\n"))))
+                                  (process (get-buffer-process miracle-repl-buffer)))
+                              ;; update namespace if needed
+                              (if ns (setq miracle-buffer-ns ns))
+                              (comint-output-filter process output)
+                              ;; now handle status
+                              (when status
+                                (when (and miracle-detail-stacktraces (member "eval-error" status))
+                                  (miracle-get-stacktrace))
+                                (when (member "eval-error" status)
+                                  (message root-ex))
+                                (when (member "interrupted" status)
+                                  (message "Evaluation interrupted."))
+                                (when (member "need-input" status)
+                                  (miracle-handle-input))
+                                (when (member "done" status)
+                                  (remhash id miracle-requests)))
+                              ;; show prompt only when no output is given in any of received vars
+                              (unless (or err out value root-ex ex)
+                                (comint-output-filter process (format miracle-repl-prompt-format miracle-buffer-ns)))))))
 
-(defun monroe-input-sender (proc input)
+(defun miracle-input-sender (proc input)
   "Called when user enter data in REPL and when something is received in."
-  (monroe-send-eval-string input (monroe-make-response-handler)))
+  (miracle-send-eval-string input (miracle-make-response-handler)))
 
-(defun monroe-handle-input ()
+(defun miracle-handle-input ()
   "Called when requested user input."
-  (monroe-send-stdin
+  (miracle-send-stdin
    (concat (read-from-minibuffer "Stdin: ") "\n")
-   (monroe-make-response-handler)))
+   (miracle-make-response-handler)))
 
-(defun monroe-sentinel (process message)
+(defun miracle-sentinel (process message)
   "Called when connection is changed; in out case dropped."
   (message "nREPL connection closed: %s" message)
   (kill-buffer (process-buffer process))
-  (monroe-disconnect))
+  (miracle-disconnect))
 
-(defun monroe-dispatch (msg)
+(defun miracle-dispatch (msg)
   "Find associated callback for a message by id or by op."
-  (monroe-dbind-response msg (id op)
-                         (let ((callback (or (gethash id monroe-requests)
-                                             (gethash op monroe-custom-handlers))))
-                           (when callback
-                             (funcall callback msg)))))
+  (miracle-dbind-response msg (id op)
+                          (let ((callback (or (gethash id miracle-requests)
+                                              (gethash op miracle-custom-handlers))))
+                            (when callback
+                              (funcall callback msg)))))
 
-(defun monroe-net-decode ()
+(defun miracle-net-decode ()
   "Decode the data in the current buffer and remove the processed data from the
 buffer if the decode successful."
   (let* ((start   (point-min))
          (end     (point-max))
          (data    (buffer-substring start end))
-         (decoded (monroe-decode data)))
+         (decoded (miracle-decode data)))
     (delete-region start end)
     decoded))
 
-(defun monroe-net-filter (process string)
+(defun miracle-net-filter (process string)
   "Called when the new message is received. Process will redirect
 all received output to this function; it will decode it and put in
-monroe-repl-buffer."
+miracle-repl-buffer."
   (with-current-buffer (process-buffer process)
     (goto-char (point-max))
     (insert string)
@@ -375,145 +375,145 @@ monroe-repl-buffer."
       (when (eq ?e (aref string (- (length string) 1)))
         (unless (accept-process-output process 0.01)
           (while (> (buffer-size) 1)
-            (dolist (response (monroe-net-decode))
-              (monroe-dispatch response))))))))
+            (dolist (response (miracle-net-decode))
+              (miracle-dispatch response))))))))
 
-(defun monroe-new-session-handler (process)
+(defun miracle-new-session-handler (process)
   "Returns callback that is called when new connection is established."
   (lambda (response)
-    (monroe-dbind-response response (id new-session)
-                           (when new-session
-                             (message "Connected.")
-                             (setq monroe-session new-session)
-                             (remhash id monroe-requests)
-                             (sit-for 0.1) ;; Don't ask me, didn't work without it
-                             (run-hooks 'monroe-connected-hook)))))
+    (miracle-dbind-response response (id new-session)
+                            (when new-session
+                              (message "Connected.")
+                              (setq miracle-session new-session)
+                              (remhash id miracle-requests)
+                              (sit-for 0.1) ;; Don't ask me, didn't work without it
+                              (run-hooks 'miracle-connected-hook)))))
 
-(defun monroe-valid-host-string (str default)
+(defun miracle-valid-host-string (str default)
   "Used for getting valid string for host/port part."
   (if (and str (not (string= "" str)))
       str
     default))
 
-(defun monroe-locate-port-file ()
+(defun miracle-locate-port-file ()
   (locate-dominating-file default-directory ".nrepl-port"))
 
-(defun monroe-locate-running-nrepl-host ()
+(defun miracle-locate-running-nrepl-host ()
   "Return host of running nREPL server."
-  (let ((dir (monroe-locate-port-file)))
+  (let ((dir (miracle-locate-port-file)))
     (when dir
       (with-temp-buffer
         (insert-file-contents (concat dir ".nrepl-port"))
         (concat "localhost:" (buffer-string))))))
 
-(defun monroe-strip-protocol (host)
+(defun miracle-strip-protocol (host)
   "Check if protocol was given and strip it."
   (let ((host (replace-regexp-in-string "[ \t]" "" host)))
     (if (string-match "^nrepl://" host)
         (substring host 8)
       host)))
 
-(defun monroe-connect (host-and-port)
+(defun miracle-connect (host-and-port)
   "Connect to remote endpoint using provided hostname and port."
-  (let* ((hp   (split-string (monroe-strip-protocol host-and-port) ":"))
-         (host (monroe-valid-host-string (first hp) "localhost"))
+  (let* ((hp   (split-string (miracle-strip-protocol host-and-port) ":"))
+         (host (miracle-valid-host-string (first hp) "localhost"))
          (port (string-to-number
-                (monroe-valid-host-string (second hp) "7888"))))
+                (miracle-valid-host-string (second hp) "7888"))))
     (message "Connecting to nREPL host on '%s:%d'..." host port)
-    (let ((process (open-network-stream "monroe" "*monroe-connection*" host port)))
-      (set-process-filter process 'monroe-net-filter)
-      (set-process-sentinel process 'monroe-sentinel)
+    (let ((process (open-network-stream "miracle" "*miracle-connection*" host port)))
+      (set-process-filter process 'miracle-net-filter)
+      (set-process-sentinel process 'miracle-sentinel)
       (set-process-coding-system process 'utf-8-unix 'utf-8-unix)
-      (monroe-send-hello (monroe-new-session-handler (process-buffer process)))
+      (miracle-send-hello (miracle-new-session-handler (process-buffer process)))
       process)))
 
-(defun monroe-disconnect ()
+(defun miracle-disconnect ()
   "Disconnect from current nrepl connection. Calling this function directly
-will force connection closing, which will as result call '(monroe-sentinel)'."
-  (monroe-clear-request-table)
+will force connection closing, which will as result call '(miracle-sentinel)'."
+  (miracle-clear-request-table)
   (let ((delete-process-safe (lambda (p)
                                (when (and p (process-live-p p))
                                  (delete-process p))))
-        ;; 'monroe-repl-buffer' process is actually 'fake-proc'
-        (proc1 (get-buffer-process monroe-repl-buffer))
-        (proc2 (get-buffer-process "*monroe-connection*")))
+        ;; 'miracle-repl-buffer' process is actually 'fake-proc'
+        (proc1 (get-buffer-process miracle-repl-buffer))
+        (proc2 (get-buffer-process "*miracle-connection*")))
     (funcall delete-process-safe proc1)
     (funcall delete-process-safe proc2)))
 
 ;;; keys
 
-(defun monroe-eval-region (start end)
+(defun miracle-eval-region (start end)
   "Evaluate selected region."
   (interactive "r")
-  (monroe-input-sender (get-buffer-process monroe-repl-buffer) (buffer-substring-no-properties start end)))
+  (miracle-input-sender (get-buffer-process miracle-repl-buffer) (buffer-substring-no-properties start end)))
 
-(defun monroe-eval-buffer ()
+(defun miracle-eval-buffer ()
   "Evaluate the buffer."
   (interactive)
-  (monroe-eval-region (point-min) (point-max)))
+  (miracle-eval-region (point-min) (point-max)))
 
-(defun monroe-eval-defun ()
+(defun miracle-eval-defun ()
   "Figure out top-level expression and send it to evaluation."
   (interactive)
   (save-excursion
     (end-of-defun)
     (let ((end (point)))
       (beginning-of-defun)
-      (monroe-eval-region (point) end))))
+      (miracle-eval-region (point) end))))
 
-(defun monroe-eval-expression-at-point ()
+(defun miracle-eval-expression-at-point ()
   "Figure out expression at point and send it for evaluation."
   (interactive)
   (save-excursion
     (let ((end (point)))
       (backward-sexp)
-      (monroe-eval-region (point) end))))
+      (miracle-eval-region (point) end))))
 
-(defun monroe-eval-namespace ()
+(defun miracle-eval-namespace ()
   "Tries to evaluate Clojure ns form. It does this by matching first
 expression at the beginning of the file and evaluating it. Not something
 that is 100% accurate, but Clojure practice is to keep ns forms always
 at the top of the file."
   (interactive)
-  (when (monroe-find-ns)
+  (when (miracle-find-ns)
     (save-excursion
       (goto-char (match-beginning 0))
-      (monroe-eval-defun))))
+      (miracle-eval-defun))))
 
-(defun monroe-eval-doc (symbol)
+(defun miracle-eval-doc (symbol)
   "Internal function to actually ask for symbol documentation via nrepl protocol."
-  (monroe-input-sender
-   (get-buffer-process monroe-repl-buffer)
+  (miracle-input-sender
+   (get-buffer-process miracle-repl-buffer)
    (format "(do (require 'clojure.repl) (clojure.repl/doc %s))" symbol)))
 
-(defvar monroe-translate-path-function 'identity
-  "This function is called on all paths returned by `monroe-jump'.
+(defvar miracle-translate-path-function 'identity
+  "This function is called on all paths returned by `miracle-jump'.
 You can use it to translate paths if you are running an nrepl server remotely or
 inside a container.")
 
-(defun monroe-jump-find-file (file)
+(defun miracle-jump-find-file (file)
   "Internal function to find a file on the disk or inside a jar."
   (if (string-match "^clojure\\|^arcadia" file)
-      (find-file (concat *monroe-project-path* "/Assets/Arcadia/Source/" file))
+      (find-file (concat *miracle-project-path* "/Assets/Arcadia/Source/" file))
     (find-file file)))
 
-(defun monroe-eval-jump (ns var)
+(defun miracle-eval-jump (ns var)
   "Internal function to actually ask for var location via nrepl protocol."
   (lexical-let
       ((ns ns)
        (var var))
-    (monroe-send-eval-string
+    (miracle-send-eval-string
      (format "%s" `((juxt :file :line)
                     (meta ,(if ns `(ns-resolve ',(intern ns) ',(intern var))
                              `(resolve ',(intern var))))))
      (lambda (response)
-       (monroe-dbind-response
+       (miracle-dbind-response
         response (id value status)
         (when value
           (destructuring-bind (file line)
               (append (car (read-from-string value)) nil)
             (if file
-                (progn (monroe-jump-find-file (funcall monroe-translate-path-function file))
+                (progn (miracle-jump-find-file (funcall miracle-translate-path-function file))
                        (when line
                          (goto-char (point-min))
                          (forward-line (1- line))))
@@ -522,17 +522,17 @@ inside a container.")
                         (propertize "Couldn't find symbol: " 'face 'font-lock-warning-face)
                         (propertize (concat var (when ns (concat " (in " ns ")"))) 'face 'font-lock-variable-name-face)))))))))))
 
-(defun monroe-get-stacktrace ()
+(defun miracle-get-stacktrace ()
   "When error happens, print the stack trace"
-  (let ((pst (or monroe-print-stack-trace-function
-                 (if monroe-old-style-stacktraces
+  (let ((pst (or miracle-print-stack-trace-function
+                 (if miracle-old-style-stacktraces
                      'clojure.stacktrace/print-stack-trace
                    'clojure.repl/pst))))
-    (monroe-send-eval-string
+    (miracle-send-eval-string
      (format "(do (require (symbol (namespace '%s))) (%s *e))" pst pst)
-     (monroe-make-response-handler))))
+     (miracle-make-response-handler))))
 
-(defun monroe-describe (symbol)
+(defun miracle-describe (symbol)
   "Ask user about symbol and show symbol documentation if found."
   (interactive
    (list
@@ -543,9 +543,9 @@ inside a container.")
                        (format "%s (default %s): " prompt sym)
                      (concat prompt ": "))))
       (read-string prompt nil nil sym))))
-  (monroe-eval-doc symbol))
+  (miracle-eval-doc symbol))
 
-(defun monroe-load-file (path)
+(defun miracle-load-file (path)
   "Load file to running process, asking user for alternative path.
 This function, contrary to clojure-mode.el, will not use comint-mode for sending files
 as path can be remote location. For remote paths, use absolute path."
@@ -555,11 +555,11 @@ as path can be remote location. For remote paths, use absolute path."
       (read-file-name "Load file: " nil nil nil
                       (and n (file-name-nondirectory n))))))
   (let ((full-path (convert-standard-filename (expand-file-name path))))
-    (monroe-input-sender
-     (get-buffer-process monroe-repl-buffer)
+    (miracle-input-sender
+     (get-buffer-process miracle-repl-buffer)
      (format "(clojure.core/load-file \"%s\")" full-path))))
 
-(defun monroe-jump (var)
+(defun miracle-jump (var)
   "Jump to definition of var at point."
   (interactive
    (list (if (thing-at-point 'symbol)
@@ -568,10 +568,10 @@ as path can be remote location. For remote paths, use absolute path."
   (defvar find-tag-marker-ring) ;; etags.el
   (require 'etags)
   (ring-insert find-tag-marker-ring (point-marker))
-  (monroe-eval-jump (monroe-find-ns) var))
+  (miracle-eval-jump (miracle-find-ns) var))
 
-(defun monroe-jump-pop ()
-  "Return point to the position and buffer before running `monroe-jump'."
+(defun miracle-jump-pop ()
+  "Return point to the position and buffer before running `miracle-jump'."
   (interactive)
   (defvar find-tag-marker-ring) ;; etags.el
   (require 'etags)
@@ -579,133 +579,133 @@ as path can be remote location. For remote paths, use absolute path."
     (switch-to-buffer (marker-buffer marker))
     (goto-char (marker-position marker))))
 
-(defun monroe-switch-to-repl ()
+(defun miracle-switch-to-repl ()
   (interactive)
-  (pop-to-buffer monroe-repl-buffer))
+  (pop-to-buffer miracle-repl-buffer))
 
-(defun monroe-nrepl-server-start ()
-  "Starts nrepl server. Uses monroe-nrepl-server-cmd + monroe-nrepl-server-cmd-args as the command. Finds project root by locatin monroe-nrepl-server-project-file"
+(defun miracle-nrepl-server-start ()
+  "Starts nrepl server. Uses miracle-nrepl-server-cmd + miracle-nrepl-server-cmd-args as the command. Finds project root by locatin miracle-nrepl-server-project-file"
   (interactive)
-  (let* ((nrepl-buf-name (concat "*" monroe-nrepl-server-buffer-name "*"))
-         (repl-started-dir (monroe-locate-port-file)))
+  (let* ((nrepl-buf-name (concat "*" miracle-nrepl-server-buffer-name "*"))
+         (repl-started-dir (miracle-locate-port-file)))
     (if repl-started-dir
         (message "nREPL server already running in %s" repl-started-dir)
       (progn
         (lexical-let ((default-directory
                         (locate-dominating-file default-directory
-                                                monroe-nrepl-server-project-file)))
+                                                miracle-nrepl-server-project-file)))
           (message "Starting nREPL server in %s" default-directory)
-          (async-shell-command (concat monroe-nrepl-server-cmd " " monroe-nrepl-server-cmd-args)
+          (async-shell-command (concat miracle-nrepl-server-cmd " " miracle-nrepl-server-cmd-args)
                                nrepl-buf-name))))))
 
-(defun monroe-extract-keys (htable)
+(defun miracle-extract-keys (htable)
   "Get all keys from hashtable."
   (let (keys)
     (maphash (lambda (k v) (setq keys (cons k keys))) htable)
     keys))
 
-(defun monroe-interrupt ()
+(defun miracle-interrupt ()
   "Send interrupt to all pending requests."
   (interactive)
-  (dolist (id (monroe-extract-keys monroe-requests))
-    (monroe-send-interrupt id (monroe-make-response-handler))))
+  (dolist (id (miracle-extract-keys miracle-requests))
+    (miracle-send-interrupt id (miracle-make-response-handler))))
 
-(defun monroe-set-project-path ()
-  "Sets *monroe-project-path* to the path of the project
-the nREPL server monroe connected to was started in."
+(defun miracle-set-project-path ()
+  "Sets *miracle-project-path* to the path of the project
+the nREPL server miracle connected to was started in."
   (interactive)
-  (monroe-send-eval-string
+  (miracle-send-eval-string
    (format "%s" `(.. (clojure.clr.io/as-file \".\") FullName))
    (lambda (response) 
-     (monroe-dbind-response response (id value status)
-                            (when (member "done" status)
-                              (remhash id monroe-requests))
-                            (when value
-                              (setq *monroe-project-path* (read value)))))))
+     (miracle-dbind-response response (id value status)
+                             (when (member "done" status)
+                               (remhash id miracle-requests))
+                             (when value
+                               (setq *miracle-project-path* (read value)))))))
 
-;; keys for interacting with Monroe REPL buffer
-(defvar monroe-interaction-mode-map
+;; keys for interacting with Miracle REPL buffer
+(defvar miracle-interaction-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "\C-c\C-c" 'monroe-eval-defun)
-    (define-key map "\C-c\C-e" 'monroe-eval-expression-at-point)
-    (define-key map "\C-c\C-r" 'monroe-eval-region)
-    (define-key map "\C-c\C-k" 'monroe-eval-buffer)
-    (define-key map "\C-c\C-n" 'monroe-eval-namespace)
-    (define-key map "\C-c\C-d" 'monroe-describe)
-    (define-key map "\C-c\C-b" 'monroe-interrupt)
-    (define-key map "\C-c\C-l" 'monroe-load-file)
-    (define-key map "\M-."     'monroe-jump)
-    (define-key map "\M-,"     'monroe-jump-pop)
-    (define-key map "\C-c\C-z" 'monroe-switch-to-repl)
+    (define-key map "\C-c\C-c" 'miracle-eval-defun)
+    (define-key map "\C-c\C-e" 'miracle-eval-expression-at-point)
+    (define-key map "\C-c\C-r" 'miracle-eval-region)
+    (define-key map "\C-c\C-k" 'miracle-eval-buffer)
+    (define-key map "\C-c\C-n" 'miracle-eval-namespace)
+    (define-key map "\C-c\C-d" 'miracle-describe)
+    (define-key map "\C-c\C-b" 'miracle-interrupt)
+    (define-key map "\C-c\C-l" 'miracle-load-file)
+    (define-key map "\M-."     'miracle-jump)
+    (define-key map "\M-,"     'miracle-jump-pop)
+    (define-key map "\C-c\C-z" 'miracle-switch-to-repl)
     map))
 
-;; keys for interacting inside Monroe REPL buffer
-(defvar monroe-mode-map
+;; keys for interacting inside Miracle REPL buffer
+(defvar miracle-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map comint-mode-map)
-    (define-key map "\C-c\C-d" 'monroe-describe)
-    (define-key map "\C-c\C-c" 'monroe-interrupt)
-    (define-key map "\M-."     'monroe-jump)
+    (define-key map "\C-c\C-d" 'miracle-describe)
+    (define-key map "\C-c\C-c" 'miracle-interrupt)
+    (define-key map "\M-."     'miracle-jump)
     map))
 
 ;;; rest
 
-(define-derived-mode monroe-mode comint-mode "Monroe nREPL"
+(define-derived-mode miracle-mode comint-mode "Miracle nREPL"
   "Major mode for evaluating commands over nREPL.
 
-The following keys are available in `monroe-mode':
+The following keys are available in `miracle-mode':
 
-  \\{monroe-mode-map}"
+  \\{miracle-mode-map}"
   
   :syntax-table lisp-mode-syntax-table
-  (setq comint-prompt-regexp monroe-prompt-regexp)
-  (setq comint-input-sender 'monroe-input-sender)
+  (setq comint-prompt-regexp miracle-prompt-regexp)
+  (setq comint-input-sender 'miracle-input-sender)
   (setq mode-line-process '(":%s"))
                                         ;(set (make-local-variable 'font-lock-defaults) '(clojure-font-lock-keywords t))
   
   ;; a hack to keep comint happy
   (unless (comint-check-proc (current-buffer))
-    (let ((fake-proc (start-process "monroe" (current-buffer) nil)))
+    (let ((fake-proc (start-process "miracle" (current-buffer) nil)))
       (set-process-query-on-exit-flag fake-proc nil)
-      (insert (format ";; Monroe nREPL %s\n" monroe-version))
+      (insert (format ";; Miracle nREPL %s\n" miracle-version))
       (set-marker (process-mark fake-proc) (point))
-      (comint-output-filter fake-proc (format monroe-repl-prompt-format monroe-buffer-ns)))))
+      (comint-output-filter fake-proc (format miracle-repl-prompt-format miracle-buffer-ns)))))
 
 ;;; user command
 
-(defun clojure-enable-monroe ()
-  (monroe-interaction-mode t))
+(defun clojure-enable-miracle ()
+  (miracle-interaction-mode t))
 
 ;;;###autoload
-(define-minor-mode monroe-interaction-mode
-  "Minor mode for Monroe interaction from a Clojure buffer.
+(define-minor-mode miracle-interaction-mode
+  "Minor mode for Miracle interaction from a Clojure buffer.
 
-The following keys are available in `monroe-interaction-mode`:
+The following keys are available in `miracle-interaction-mode`:
 
-  \\{monroe-interaction-mode}"
+  \\{miracle-interaction-mode}"
   
-  nil " Monroe" monroe-interaction-mode-map)
+  nil " Miracle" miracle-interaction-mode-map)
 
-(add-hook 'monroe-connected-hook 'monroe-set-project-path)
+(add-hook 'miracle-connected-hook 'miracle-set-project-path)
 
 ;;;###autoload
-(defun monroe (host-and-port)
-  "Load monroe by setting up appropriate mode, asking user for
+(defun miracle (host-and-port)
+  "Load miracle by setting up appropriate mode, asking user for
 connection endpoint."
   (interactive
-   (let ((host (or (monroe-locate-running-nrepl-host) monroe-default-host)))
+   (let ((host (or (miracle-locate-running-nrepl-host) miracle-default-host)))
      (list
       (read-string (format "Host (default '%s'): " host)
                    nil nil host))))
   (unless (ignore-errors
-            (with-current-buffer (get-buffer-create monroe-repl-buffer)
+            (with-current-buffer (get-buffer-create miracle-repl-buffer)
               (prog1
-                  (monroe-connect host-and-port)
+                  (miracle-connect host-and-port)
                 (goto-char (point-max))
-                (monroe-mode)
+                (miracle-mode)
                 (switch-to-buffer (current-buffer)))))
     (message "Unable to connect to %s" host-and-port)))
 
-(provide 'monroe)
+(provide 'miracle)
 
-;;; monroe.el ends here
+;;; miracle.el ends here

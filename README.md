@@ -1,20 +1,20 @@
-# !!! This fork is intended to be used with Arcadia !!!
-Since [Arcadia](https://github.com/arcadia-unity/Arcadia) runs on CLR there are some things that needed to be changed in Monroe in order for e.g. jump to definiton to work. Arcadia in turn has some quirks that makes it useful to have a fork dedicated completely to Arcadia (if nothing else because I'm not using ClojureCLR outside of Arcadia).
+# Miracle - An Arcadia opiniated fork of monroe, the nREPL client
 
-# Monroe - Clojure nREPL client for Emacs
+_It takes a Miracle to reach Arcadia_
 
-<p align="center">
-<img src="https://raw.github.com/sanel/monroe/master/images/shot.png"
-     alt="Monroe" title="Monroe screenshot">
-</p>
+Miracle is a fork of [Monroe](https://github.com/sanel/monroe), which in turn is a nREPL client for Emacs. Miracle is meant to be used with ClojureCLR in general, and Arcadia in particular.
 
-Monroe is [nREPL](https://github.com/nrepl/nrepl) client for
-Emacs, focused on simplicity and easy distribution primarily targeting
-Clojure users.
+Since [Arcadia](https://github.com/arcadia-unity/Arcadia) runs on CLR there are some things that needed to be changed in Monroe in order for e.g. jump to definiton to work.
 
 If you are not familiar with nREPL, it is protocol for accessing
 Clojure [REPL](http://en.wikipedia.org/wiki/Read-eval-print_loop) over
 the network.
+
+The name comes from Marilyn Monroe's sister, who's last name is Miracle.
+
+Below follows a description of Monroe, which currently applies to Miracle as well.
+
+# About Monroe
 
 In short, Monroe aims to have:
 
@@ -32,36 +32,28 @@ On other hand, Monroe is not:
 
 ## Installation
 
+Install [Arcadia](https://github.com/arcadia-unity/Arcadia). Might work with other ClojureCLR nREPLs, but Arcadia is Miracle's primary focus.
+
 Make sure you have `clojure-mode.el` installed first. You can get it
-from Marmalade repository or directly from
+from Marmalade repository, melpa or directly from
 [here](https://github.com/clojure-emacs/clojure-mode).
 
-Official Monroe releases you can find on
-[releases](https://github.com/sanel/monroe/releases) page or you can
-get it from Marmalade repository of Emacs packages (you are familiar
-with Emacs packages, right?).
+Clone this repository, it's currently not on melpa.
 
-Latest (and maybe unstable) code you can always get from this
-repository or MELPA repository of Emacs packages.
-
-If you get Monroe by downloading official release or by cloning this
-repository, you can install it by moving `monroe.el` file in
-`$HOME/.emacs.d` folder or any other location listed in Emacs
-`load-path` variable. Installing via Emacs package manager will do
-this automatically.
+Move `marilyn.el` file to `$HOME/.emacs.d` folder or any other location listed in Emacs `load-path` variable, or clone the repository into emacs and add the miracle folder to the `load-path`, eg by following the guide [here](http://ergoemacs.org/emacs/emacs_installing_packages.html#Load%20File%20at%20Startup) (look under the header *Load File at Startup*.
 
 In your
 [Emacs init file](https://www.gnu.org/software/emacs/manual/html_node/emacs/Init-File.html),
 put:
 
 ```el
-(require 'monroe)
-(add-hook 'clojure-mode-hook 'clojure-enable-monroe)
+(require 'miracle)
+(add-hook 'clojure-mode-hook 'clojure-enable-miracle)
 ```
 
 Then, in Emacs:
 
-<kbd>M-x monroe [RET]</kbd>
+<kbd>M-x miracle [RET]</kbd>
 
 and follow the question about nREPL server location and port.
 
@@ -69,18 +61,18 @@ and follow the question about nREPL server location and port.
 
 You can start the nREPL server straight from Emacs by running:
 
-<kbd>M-x monroe-nrepl-server-start [RET]</kbd>
+<kbd>M-x miracle-nrepl-server-start [RET]</kbd>
 
 and then connect as above.
-By default Monroe will start Leiningen REPL with command:
+By default Miracle will start Leiningen REPL with command:
 
 `lein trampoline repl :headless`
 
 You can override this by setting the following variables:
 
-- `monroe-nrepl-server-cmd` - defaults to `lein`
-- `monroe-nrepl-server-cmd-args` - defaults to `trampoline repl :headless`
-- `monroe-nrepl-server-project-file` - defaults to `project.clj` - this is used
+- `miracle-nrepl-server-cmd` - defaults to `lein`
+- `miracle-nrepl-server-cmd-args` - defaults to `trampoline repl :headless`
+- `miracle-nrepl-server-project-file` - defaults to `project.clj` - this is used
    for finding your project's root and launching the REPL process in that location
 
 #### Boot configuration
@@ -91,24 +83,24 @@ For boot, set the following in your `init.el`:
 
 
 ```elisp
-(setq monroe-nrepl-server-cmd "boot")
-(setq monroe-nrepl-server-cmd-args "repl -S")
-(setq monroe-nrepl-server-project-file "build.boot")
+(setq miracle-nrepl-server-cmd "boot")
+(setq miracle-nrepl-server-cmd-args "repl -S")
+(setq miracle-nrepl-server-project-file "build.boot")
 ```
 
 
 ## Keys and shortcuts
 
-### Monroe shortcuts for code buffer
+### Miracle shortcuts for code buffer
 
 These shortcuts are valid from code buffer where you edit Clojure
-code and where *monroe-interaction-mode* is activated.
+code and where *miracle-interaction-mode* is activated.
 
 Keys                | Description
 --------------------|----------------------------
 <kbd>C-c C-c</kbd>  | Evaluate expression at point.
 <kbd>C-c C-r</kbd>  | Evaluate region.
-<kbd>C-c C-k</kbd>  | Evaluate current buffer contents.
+<kbd>C-c C-k</kbd>  | Evaluate current buffer contents. *THIS CURRENTLY DOESN'T WORK IN MIRACLE*
 <kbd>C-c C-l</kbd>  | Load current file from disk.
 <kbd>C-c C-d</kbd>  | Describe symbol at point, showing documentation in REPL window.
 <kbd>C-c C-n</kbd>  | Evaluate namespace.
@@ -126,7 +118,7 @@ load the whole file from its disk, so if you are connected to a remote
 server and have made changes to your local copy, they will not be
 loaded. However, a single exception will halt the whole thing.
 
-### Monroe shortcuts for REPL buffer
+### Miracle shortcuts for REPL buffer
 
 These shortcuts are valid in REPL buffer; also, most of the standard
 *comint-mode* shortcuts should work without problems.
