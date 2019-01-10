@@ -100,6 +100,7 @@ Keys                | Description
 <kbd>C-c C-d</kbd>  | Describe symbol at point, showing documentation in REPL window.
 <kbd>C-c C-c</kbd>  | Interrupt running job.
 <kbd>M-.</kbd>      | Jump to definition of var at point.
+<kbd>C-c C-f</kbd>  | Replaces the last result with a pretty printed version of it. `f` is for formatting.
 
 ## Bug reports & patches
 
