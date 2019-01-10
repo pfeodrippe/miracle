@@ -467,7 +467,7 @@ will force connection closing, which will as result call '(miracle-sentinel)'."
 (defun miracle-eval-region (start end)
   "Evaluate selected region."
   (interactive "r")
-  (miracle-input-sender (get-buffer-process miracle-repl-buffer) (buffer-substring-no-properties start end)))
+  (miracle-input-sender (get-buffer-process miracle-repl-buffer) (format "(eval (read-string {:read-cond :allow} \"(do %s)\"))" (buffer-substring-no-properties start end))))
 
 (defun miracle-eval-buffer ()
   "Evaluate the buffer."
