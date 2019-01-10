@@ -90,7 +90,20 @@ e.g. 'clojure.stacktrace/print-stack-trace for old-style stack traces."
   :type 'symbol
   :group 'miracle)
 
-(defvar miracle-version "0.4.0"
+(defcustom miracle-always-pretty-print nil
+  "When enabled, results are always pretty printed in the buffer.
+Note that currently this always returns nil, so *1 will also always return nil."
+  :type 'boolean
+  :group 'miracle)
+
+(defcustom miracle-custom-eval-wrappers nil
+  "Add functions that take a single argument to be called on the result of eval.
+The functions are called through a (as-> ... $) macro, so put $ where the result should be passed in.
+E.g. (+ $ 2) in order to add two to the result."
+  :type '(repeat string)
+  :group 'miracle)
+
+(defvar miracle-version "0.4.1"
   "The current miracle version.")
 
 (defvar miracle-session nil
@@ -324,9 +337,18 @@ mixed newlines of the clojure core packages."
                               (unless (or err out value root-ex ex)
                                 (comint-output-filter process (format miracle-repl-prompt-format miracle-buffer-ns)))))))
 
+(defun miracle-eval-wrappers ()
+  (append
+   '()
+   miracle-custom-eval-wrappers
+   (when miracle-always-pretty-print '("(clojure.pprint/pprint $)"))))
+
+(defun miracle-wrap-eval (input)
+  (format "(as-> %s $ %s)" input (apply 'concat (miracle-eval-wrappers))))
+
 (defun miracle-input-sender (proc input)
   "Called when user enter data in REPL and when something is received in."
-  (miracle-send-eval-string input (miracle-make-response-handler)))
+  (miracle-send-eval-string (miracle-wrap-eval input) (miracle-make-response-handler)))
 
 (defun miracle-handle-input ()
   "Called when requested user input."
