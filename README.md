@@ -71,8 +71,8 @@ code and where *miracle-interaction-mode* is activated.
 Keys                | Description
 --------------------|----------------------------
 <kbd>C-c C-c</kbd>  | Evaluate expression at point.
-<kbd>C-c C-r</kbd>  | Evaluate region. *THIS CURRENTLY DOESN'T WORK IN MIRACLE*
-<kbd>C-c C-k</kbd>  | Evaluate current buffer contents. *THIS CURRENTLY DOESN'T WORK IN MIRACLE*
+<kbd>C-c C-r</kbd>  | Evaluate region.
+<kbd>C-c C-k</kbd>  | Evaluate current buffer contents.
 <kbd>C-c C-l</kbd>  | Load current file from disk.
 <kbd>C-c C-d</kbd>  | Describe symbol at point, showing documentation in REPL window.
 <kbd>C-c C-n</kbd>  | Evaluate namespace.
