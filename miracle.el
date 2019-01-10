@@ -96,13 +96,6 @@ Note that currently this always returns nil, so *1 will also always return nil."
   :type 'boolean
   :group 'miracle)
 
-(defcustom miracle-custom-eval-wrappers nil
-  "Add functions that take a single argument to be called on the result of eval.
-The functions are called through a (as-> ... $) macro, so put $ where the result should be passed in.
-E.g. (+ $ 2) in order to add two to the result."
-  :type '(repeat string)
-  :group 'miracle)
-
 (defvar miracle-version "0.4.1"
   "The current miracle version.")
 
@@ -337,14 +330,10 @@ mixed newlines of the clojure core packages."
                               (unless (or err out value root-ex ex)
                                 (comint-output-filter process (format miracle-repl-prompt-format miracle-buffer-ns)))))))
 
-(defun miracle-eval-wrappers ()
-  (append
-   '()
-   miracle-custom-eval-wrappers
-   (when miracle-always-pretty-print '("(clojure.pprint/pprint $)"))))
-
 (defun miracle-wrap-eval (input)
-  (format "(as-> %s $ %s)" input (apply 'concat (miracle-eval-wrappers))))
+  (if miracle-always-pretty-print
+      (format "(clojure.pprint/pprint (do %s \n))" input)
+    (format "(do %s \n)" input)))
 
 (defun miracle-input-sender (proc input)
   "Called when user enter data in REPL and when something is received in."
@@ -467,7 +456,9 @@ will force connection closing, which will as result call '(miracle-sentinel)'."
 (defun miracle-eval-region (start end)
   "Evaluate selected region."
   (interactive "r")
-  (miracle-input-sender (get-buffer-process miracle-repl-buffer) (format "(eval (read-string {:read-cond :allow} \"(do %s)\"))" (buffer-substring-no-properties start end))))
+  (miracle-input-sender
+   (get-buffer-process miracle-repl-buffer)
+   (buffer-substring-no-properties start end)))
 
 (defun miracle-eval-buffer ()
   "Evaluate the buffer."
