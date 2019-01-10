@@ -90,12 +90,6 @@ e.g. 'clojure.stacktrace/print-stack-trace for old-style stack traces."
   :type 'symbol
   :group 'miracle)
 
-(defcustom miracle-always-pretty-print nil
-  "When enabled, results are always pretty printed in the buffer.
-Note that currently this always returns nil, so *1 will also always return nil."
-  :type 'boolean
-  :group 'miracle)
-
 (defvar miracle-version "0.4.1"
   "The current miracle version.")
 
@@ -330,14 +324,9 @@ mixed newlines of the clojure core packages."
                               (unless (or err out value root-ex ex)
                                 (comint-output-filter process (format miracle-repl-prompt-format miracle-buffer-ns)))))))
 
-(defun miracle-wrap-eval (input)
-  (if miracle-always-pretty-print
-      (format "(clojure.pprint/pprint (do %s \n))" input)
-    (format "(do %s \n)" input)))
-
 (defun miracle-input-sender (proc input)
   "Called when user enter data in REPL and when something is received in."
-  (miracle-send-eval-string (miracle-wrap-eval input) (miracle-make-response-handler)))
+  (miracle-send-eval-string (format "(do %s \n)" input) (miracle-make-response-handler)))
 
 (defun miracle-handle-input ()
   "Called when requested user input."
@@ -545,6 +534,14 @@ inside a container.")
      (format "(do (require (symbol (namespace '%s))) (%s *e))" pst pst)
      (miracle-make-response-handler))))
 
+(defun miracle-pprint-last-result ()
+  "Pretty prints the last result."
+  (interactive)
+  (comint-delete-output)
+  (miracle-send-eval-string
+   (format "(do (require 'clojure.pprint) (clojure.pprint/pprint *1))")
+   (miracle-make-response-handler)))
+
 (defun miracle-describe (symbol)
   "Ask user about symbol and show symbol documentation if found."
   (interactive
@@ -657,6 +654,7 @@ the nREPL server miracle connected to was started in."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map comint-mode-map)
     (define-key map "\C-c\C-d" 'miracle-describe)
+    (define-key map "\C-c\C-f" 'miracle-pprint-last-result)
     (define-key map "\C-c\C-c" 'miracle-interrupt)
     (define-key map "\M-."     'miracle-jump)
     map))
