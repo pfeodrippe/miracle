@@ -1,7 +1,6 @@
-# Miracle - An Arcadia opiniated fork of monroe, the nREPL client
-
 _It takes a Miracle to reach Arcadia_
 
+# Miracle - an Arcadia nREPL client
 Miracle is a fork of [Monroe](https://github.com/sanel/monroe), which in turn is a nREPL client for Emacs. Miracle is meant to be used with ClojureCLR in general, and Arcadia in particular.
 
 Since [Arcadia](https://github.com/arcadia-unity/Arcadia) runs on CLR there are some things that needed to be changed in Monroe in order for e.g. jump to definiton to work.
@@ -38,56 +37,29 @@ Make sure you have `clojure-mode.el` installed first. You can get it
 from Marmalade repository, melpa or directly from
 [here](https://github.com/clojure-emacs/clojure-mode).
 
-Clone this repository, it's currently not on melpa.
+Clone this repository into .emacs.d, it's currently not on melpa.
+```sh
+cd ~/.emacs.d
+git clone https://github.com/Saikyun/miracle.git
+```
 
-Move `marilyn.el` file to `$HOME/.emacs.d` folder or any other location listed in Emacs `load-path` variable, or clone the repository into emacs and add the miracle folder to the `load-path`, eg by following the guide [here](http://ergoemacs.org/emacs/emacs_installing_packages.html#Load%20File%20at%20Startup) (look under the header *Load File at Startup*.
-
-In your
-[Emacs init file](https://www.gnu.org/software/emacs/manual/html_node/emacs/Init-File.html),
-put:
+In your [Emacs init file](https://www.gnu.org/software/emacs/manual/html_node/emacs/Init-File.html), put:
 
 ```el
+(add-to-list 'load-path "~/.emacs.d/miracle")
 (require 'miracle)
 (add-hook 'clojure-mode-hook 'clojure-enable-miracle)
 ```
+
+Then either evaluate the rows or restart Emacs.
+
+Start an Arcadia project in Unity.
 
 Then, in Emacs:
 
 <kbd>M-x miracle [RET]</kbd>
 
-and follow the question about nREPL server location and port.
-
-### Starting the nREPL server
-
-You can start the nREPL server straight from Emacs by running:
-
-<kbd>M-x miracle-nrepl-server-start [RET]</kbd>
-
-and then connect as above.
-By default Miracle will start Leiningen REPL with command:
-
-`lein trampoline repl :headless`
-
-You can override this by setting the following variables:
-
-- `miracle-nrepl-server-cmd` - defaults to `lein`
-- `miracle-nrepl-server-cmd-args` - defaults to `trampoline repl :headless`
-- `miracle-nrepl-server-project-file` - defaults to `project.clj` - this is used
-   for finding your project's root and launching the REPL process in that location
-
-#### Boot configuration
-
-(*Note*: these are not verified!)
-
-For boot, set the following in your `init.el`:
-
-
-```elisp
-(setq miracle-nrepl-server-cmd "boot")
-(setq miracle-nrepl-server-cmd-args "repl -S")
-(setq miracle-nrepl-server-project-file "build.boot")
-```
-
+and follow the question about nREPL server location and port. The defaults are the same as Arcadia's defaults.
 
 ## Keys and shortcuts
 
@@ -99,7 +71,7 @@ code and where *miracle-interaction-mode* is activated.
 Keys                | Description
 --------------------|----------------------------
 <kbd>C-c C-c</kbd>  | Evaluate expression at point.
-<kbd>C-c C-r</kbd>  | Evaluate region.
+<kbd>C-c C-r</kbd>  | Evaluate region. *THIS CURRENTLY DOESN'T WORK IN MIRACLE*
 <kbd>C-c C-k</kbd>  | Evaluate current buffer contents. *THIS CURRENTLY DOESN'T WORK IN MIRACLE*
 <kbd>C-c C-l</kbd>  | Load current file from disk.
 <kbd>C-c C-d</kbd>  | Describe symbol at point, showing documentation in REPL window.
