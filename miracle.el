@@ -26,6 +26,7 @@
 ;;; Commentary:
 
 ;; An arcadia opiniated fork of monroe, the nREPL client.
+;; Much of the code for completion is stolen from CIDER, thank you all cider contributors for this huge sip, long live CIDER!
 
 ;;; Installation:
 
@@ -40,13 +41,22 @@
 
 (require 'comint)
 (require 'subr-x)
+(require 'parseedn)
 (eval-when-compile
   (require 'cl))
+
+(defvar miracle-extra-eldoc-commands '("yas-expand")
+  "Extra commands to be added to eldoc's safe commands list.")
 
 (defgroup miracle nil
   "Interaction with the nREPL Server."
   :prefix "miracle-"
   :group 'applications)
+
+(defcustom miracle-use-orchardia t
+  "When true, uses orchardia."
+  :type 'boolean
+  :group 'miracle)
 
 (defcustom miracle-repl-prompt-format "%s=> "
   "String used for displaying prompt. '%s' is used as
@@ -142,6 +152,19 @@ that miracle is is connected to.")
                collect `(,key (cdr (assoc ,(format "%s" key) ,response))))
      ,@body))
 
+(defun miracle-eldoc-info-at-sexp-beginning ()
+  "Return eldoc info for first symbol in the sexp."
+  (save-excursion
+    (when-let* ((beginning-of-sexp (cider-eldoc-beginning-of-sexp))
+                ;; If we are at the beginning of function name, this will be -1
+                (argument-index (max 0 (1- beginning-of-sexp))))
+      (unless (or (memq (or (char-before (point)) 0)
+                        '(?\" ?\{ ?\[))
+                  (cider-in-comment-p))
+        (when-let* ((eldoc-info (miracle-eval-eldoc
+                                 (cider-symbol-at-point))))
+          eldoc-info)))))
+
 ;;; Bencode
 ;;; Stolen from nrepl.el which is adapted from http://www.emacswiki.org/emacs-en/bencode.el
 (defun miracle-bdecode-buffer ()
@@ -236,6 +259,7 @@ the operations supported by an nREPL endpoint."
 
 (defun miracle-send-eval-string (str callback)
   "Send code for evaluation on given namespace."
+  (miracle--prep-interactive-eval str "*miracle-connection*")
   (miracle-send-request (list "op" "eval"
                               "session" (miracle-current-session)
                               "code" str)
@@ -285,10 +309,10 @@ mixed newlines of the clojure core packages."
   (let ((ns (save-excursion
               (save-restriction
                 (widen)
-                
+
                 ;; Move to top-level to avoid searching from inside ns
                 (ignore-errors (while t (up-list nil t t)))
-                
+
                 ;; The closest ns form above point.
                 (when (or (re-search-backward miracle-namespace-name-regex nil t)
                           ;; Or any form at all.
@@ -296,6 +320,30 @@ mixed newlines of the clojure core packages."
                                (re-search-forward miracle-namespace-name-regex nil t)))
                   (match-string-no-properties 4))))))
     ns))
+
+(defun miracle-ns-form ()
+  "Retrieve the ns form."
+  (when (miracle-find-ns)
+    (save-excursion
+      (goto-char (match-beginning 0))
+      (cider-defun-at-point))))
+
+(defun miracle--prep-interactive-eval (form connection)
+  "Prepare the environment for an interactive eval of FORM in CONNECTION.
+Ensure the current ns declaration has been evaluated (so that the ns
+containing FORM exists).  Cache ns-form in the current buffer unless FORM is
+ns declaration itself.  Clear any compilation highlights and kill the error
+window."
+  (let ((cur-ns-form (miracle-ns-form)))
+    (when (and cur-ns-form
+               (not (cider-ns-form-p form))
+               (cider-repl--ns-form-changed-p cur-ns-form
+                                              (get-buffer
+                                               miracle-repl-buffer)))
+      (when cider-auto-track-ns-form-changes
+        (miracle-send-sync-request (format "(do %s)" cur-ns-form) connection))
+      ;; cache at the end, in case of errors
+      (cider-repl--cache-ns-form cur-ns-form connection))))
 
 (defun miracle-make-response-handler ()
   "Returns a function that will be called when event is received."
@@ -324,9 +372,56 @@ mixed newlines of the clojure core packages."
                               (unless (or err out value root-ex ex)
                                 (comint-output-filter process (format miracle-repl-prompt-format miracle-buffer-ns)))))))
 
+(defun miracle-send-sync-request (str connection &optional abort-on-input)
+  (let* ((time0 (current-time))
+         value0
+         status0)
+    (miracle-send-request (list "op" "eval"
+                                "session" (miracle-current-session)
+                                "code" (format "(do %s \n)" str))
+                          (lambda (resp)
+                            (miracle-dbind-response
+                             resp (id ns value err out ex root-ex status)
+                             (let ((process
+                                    (get-buffer-process miracle-repl-buffer)))
+                               (when value
+                                 (setq value0 value))
+                               (when ns
+                                 (setq miracle-buffer-ns
+                                       ns)
+                                 (comint-output-filter
+                                  process out)))
+                             (setq status0 status))))
+    (while (and (not (member "done" status0))
+                (not (and abort-on-input
+                          (input-pending-p))))
+      (if status0
+          (print status0))
+      ;; If we get a need-input message then the repl probably isn't going
+      ;; anywhere, and we'll just timeout. So we forward it to the user.
+      (if (member "need-input" status0)
+          (progn (miracle-handle-input (current-buffer))
+                 ;; If the used took a few seconds to respond, we might
+                 ;; unnecessarily timeout, so let's reset the timer.
+                 (setq time0 (current-time)))
+        ;; break out in case we don't receive a response for a while
+        (when (and nrepl-sync-request-timeout
+                   (> (cadr (time-subtract (current-time) time0))
+                      10))
+          (error "Sync nREPL request timed out %s" str)))
+      ;; Clean up the response, otherwise we might repeatedly ask for input.
+      ;; (nrepl-dict-put response "status" (remove "need-input" status0))
+      (accept-process-output nil 0.01))
+    (when (member "done" status0)
+      value0)))
+
 (defun miracle-input-sender (proc input)
   "Called when user enter data in REPL and when something is received in."
   (miracle-send-eval-string (format "(do %s \n)" input) (miracle-make-response-handler)))
+
+(defun miracle-input-generic (proc input callback)
+  "Called when user enter data in REPL and when something is received in."
+  (miracle-send-eval-string (format "(do %s \n)" input) callback))
 
 (defun miracle-handle-input ()
   "Called when requested user input."
@@ -488,6 +583,86 @@ at the top of the file."
    (get-buffer-process miracle-repl-buffer)
    (format "(do (require 'clojure.repl) (clojure.repl/doc %s))" symbol)))
 
+(defun miracle-eval-eldoc (symbol)
+  "Internal function to actually ask for symbol eldoc via nrepl protocol."
+  (when miracle-use-orchardia
+    (let ((thing (cider-eldoc--convert-ns-keywords symbol)))
+      (when (and thing
+                 ;; ignore empty strings
+                 (not (string= thing ""))
+                 ;; ignore strings
+                 (not (string-prefix-p "\"" thing))
+                 ;; ignore regular expressions
+                 (not (string-prefix-p "#" thing))
+                 ;; ignore chars
+                 (not (string-prefix-p "\\" thing))
+                 ;; ignore numbers
+                 (not (string-match-p "^[0-9]" thing)))
+        (cond
+         ;; handle keywords for map access
+         ((string-prefix-p ":" thing) (format "%s %s"
+                                              thing
+                                              "([map] [map not-found])"))
+         ;; handle Classname. by displaying the eldoc for new
+         ((string-match-p "^[A-Z].+\\.$" thing) (format "%s %s"
+                                                        thing
+                                                        "([args*])"))
+         (t (let* ((ns (cider-current-ns))
+                   (request (format
+                             "(do (require 'nrepl.middleware.info
+                     '[clojure.string :as str])
+            (let [result (nrepl.middleware.info/info
+                          {:ns \"%s\" :symbol \"%s\"})]
+              (cond
+                (:ns result)
+                (-> result
+                    (update :ns str)
+                    (update :arglists str))
+
+                (:class result)
+                (-> result
+                    (update :class str)
+                    (update :arglists
+                            (fn [arglists]
+                              (str \"(\"
+                                      (->> (mapv (fn [arglists]
+                                                   (str \"[\"
+                                                           (->> arglists
+                                                                (mapv (fn [{:keys [:name :type]}]
+                                                                        (str name \" : \" type)) )
+                                                                (str/join \", \"))
+                                                           \"]\"))
+                                                 arglists)
+                                           (str/join \", \"))
+                                      \")\"))))
+                (:candidates result)
+                {:candidates
+                 (str (:member (first (vals (:candidates result))))
+                      \" - \"
+                      (str/join \" | \" (keys (:candidates result))))})))"
+                             ns
+                             symbol))
+                   (value (miracle-send-sync-request
+                           request
+                           "*miracle-connection*")))
+              (when-let ((parsed-response (parseedn-read-str
+                                           value)))
+                (cond
+                 ((gethash :ns parsed-response)
+                  (format "%s/%s: %s"
+                          (gethash :ns parsed-response)
+                          (gethash :name parsed-response)
+                          (gethash :arglists parsed-response)))
+
+                 ((gethash :class parsed-response)
+                  (format "%s/%s: %s"
+                          (gethash :class parsed-response)
+                          (gethash :member parsed-response)
+                          (gethash :arglists parsed-response)))
+                 ((gethash :candidates parsed-response)
+                  (format "%s"
+                          (gethash :candidates parsed-response))))))))))))
+
 (defvar miracle-translate-path-function 'identity
   "This function is called on all paths returned by `miracle-jump'.
 You can use it to translate paths if you are running an nrepl server remotely or
@@ -519,8 +694,8 @@ inside a container.")
                        (when line
                          (goto-char (point-min))
                          (forward-line (1- line))))
-              (message "%s" 
-                       (concat 
+              (message "%s"
+                       (concat
                         (propertize "Couldn't find symbol: " 'face 'font-lock-warning-face)
                         (propertize (concat var (when ns (concat " (in " ns ")"))) 'face 'font-lock-variable-name-face)))))))))))
 
@@ -555,6 +730,9 @@ inside a container.")
       (read-string prompt nil nil sym))))
   (miracle-eval-doc symbol))
 
+(defun miracle-eldoc ()
+  (miracle-eldoc-info-at-sexp-beginning))
+
 (defun miracle-load-file (path)
   "Load file to running process, asking user for alternative path.
 This function, contrary to clojure-mode.el, will not use comint-mode for sending files
@@ -564,6 +742,8 @@ as path can be remote location. For remote paths, use absolute path."
     (let ((n (buffer-file-name)))
       (read-file-name "Load file: " nil nil nil
                       (and n (file-name-nondirectory n))))))
+  (when-let* ((ns-form  (cider-ns-form)))
+    (cider-repl--cache-ns-form ns-form (get-buffer "*miracle*")))
   (let ((full-path (convert-standard-filename (expand-file-name path))))
     (miracle-input-sender
      (get-buffer-process miracle-repl-buffer)
@@ -626,12 +806,50 @@ the nREPL server miracle connected to was started in."
   (interactive)
   (miracle-send-eval-string
    (format "%s" `(.. (clojure.clr.io/as-file \".\") FullName))
-   (lambda (response) 
+   (lambda (response)
      (miracle-dbind-response response (id value status)
                              (when (member "done" status)
                                (remhash id miracle-requests))
                              (when value
                                (setq *miracle-project-path* (read value)))))))
+
+(defun miracle-clone-orchadia ()
+  (when miracle-use-orchardia
+    ;; Clone orchardia repo folders at first source path configured
+    ;; at `configuration.edn`
+    (when-let* ((dir (parseedn-read-str
+                      (miracle-send-sync-request
+                       (format
+                        "(do (require '[arcadia.internal.config :as config])
+      (import '[System.IO Directory])
+      (let [dirs (mapv #(str (Directory/GetCurrentDirectory) \"/\" %%)
+                       (or (:source-paths (config/config))
+                           [\"Assets\"]))
+            non-orchadia-dirs (remove #(Directory/Exists (str %% \"/orchard\"))
+                                      dirs)]
+        (when (= dirs non-orchadia-dirs)
+          (str (first dirs) \"/orchardia\"))))")
+                       "*miracle-connection*"))))
+      (shell-command (format
+                      "git clone %s %s"
+                      "https://github.com/pfeodrippe/orchardia.git"
+                      dir))
+      (shell-command (format
+                      "mv %s/src/compliment %s/../compliment"
+                      dir
+                      dir))
+      (shell-command (format
+                      "mv %s/src/orchard %s/../orchard"
+                      dir
+                      dir))
+      (shell-command (format
+                      "mv %s/src/nrepl %s/../nrepl"
+                      dir
+                      dir))
+      (shell-command (format
+                      "rm -rf %s"
+                      dir))
+      (message "Orchadia cloned with success!"))))
 
 ;; keys for interacting with Miracle REPL buffer
 (defvar miracle-interaction-mode-map
@@ -667,13 +885,13 @@ the nREPL server miracle connected to was started in."
 The following keys are available in `miracle-mode':
 
   \\{miracle-mode-map}"
-  
+
   :syntax-table lisp-mode-syntax-table
   (setq comint-prompt-regexp miracle-prompt-regexp)
   (setq comint-input-sender 'miracle-input-sender)
   (setq mode-line-process '(":%s"))
                                         ;(set (make-local-variable 'font-lock-defaults) '(clojure-font-lock-keywords t))
-  
+
   ;; a hack to keep comint happy
   (unless (comint-check-proc (current-buffer))
     (let ((fake-proc (start-process "miracle" (current-buffer) nil)))
@@ -694,10 +912,12 @@ The following keys are available in `miracle-mode':
 The following keys are available in `miracle-interaction-mode`:
 
   \\{miracle-interaction-mode}"
-  
-  nil " Miracle" miracle-interaction-mode-map)
+
+  nil " Miracle" miracle-interaction-mode-map
+  (miracle-eldoc-setup))
 
 (add-hook 'miracle-connected-hook 'miracle-set-project-path)
+(add-hook 'miracle-connected-hook 'miracle-clone-orchadia)
 
 ;;;###autoload
 (defun miracle (host-and-port)
@@ -716,6 +936,59 @@ connection endpoint."
                 (miracle-mode)
                 (switch-to-buffer (current-buffer)))))
     (message "Unable to connect to %s" host-and-port)))
+
+(defun miracle-eldoc-setup ()
+  "Setup eldoc in the current buffer.
+eldoc mode has to be enabled for this to have any effect."
+  (setq-local eldoc-documentation-function #'miracle-eldoc)
+  (apply #'eldoc-add-command miracle-extra-eldoc-commands))
+
+;; Miracle company backend
+(defun company-miracle-backend--make-candidate (candidate)
+  (let ((text (car candidate))
+        (meta (cadr candidate)))
+    (propertize text 'meta meta)))
+
+(defun company-miracle-backend--candidates (items)
+  (let (res)
+    (dolist (item items)
+      (push (company-miracle-backend--make-candidate item) res))
+    res))
+
+(defun company-miracle-backend--annotation (candidate)
+  (format " %s" (get-text-property 0 'meta candidate)))
+
+(defun company-miracle-backend (command &optional arg &rest ignored)
+  (when miracle-use-orchardia
+    (case command
+      (prefix (and (eq major-mode 'clojure-mode)
+                   (company-grab-symbol)))
+      (sorted t)
+      (candidates
+       (company-miracle-backend--candidates
+        (parseedn-read-str
+         (miracle-send-sync-request
+          (format
+           " (do (require '[compliment.core :as compliment])
+        (let [ns \"%s\"
+              prefix \"%s\"]
+          (->> (compliment/completions prefix {:ns (symbol ns)})
+               (mapv #(update %% :type {:static-field \"<f>\"
+                                        :static-method \"<sm>\"
+                                        :method \"<mt>\"
+                                        :class \"<c>\"
+                                        :special-form \"<s>\"
+                                        :function \"<f>\"
+                                        :var \"<v>\"
+                                        :macro \"<m>\"}))
+               (mapv (comp seq (juxt :candidate :type)))
+               seq)))"
+           (cider-current-ns)
+           arg)
+          "*miracle-connection*"))))
+      (annotation (company-miracle-backend--annotation arg)))))
+
+(add-to-list 'company-backends 'company-miracle-backend)
 
 (provide 'miracle)
 

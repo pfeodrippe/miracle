@@ -37,6 +37,10 @@ Make sure you have `clojure-mode.el` installed first. You can get it
 from Marmalade repository, melpa or directly from
 [here](https://github.com/clojure-emacs/clojure-mode).
 
+Also make sure you have `parseedn.el` and `cider` installed. See instructions
+at [parsedn](https://github.com/clojure-emacs/parseedn) and
+[cider](https://github.com/clojure-emacs/cider) repos.
+
 Clone this repository into .emacs.d, it's currently not on melpa.
 ```sh
 cd ~/.emacs.d
