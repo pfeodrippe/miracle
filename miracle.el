@@ -137,6 +137,18 @@ to the one used on nrepl side.")
   "This is set to the running path of the nREPL server
 that miracle is is connected to.")
 
+(defvar miracle-repl--root-ns-highlight-template "\\_<\\(%s\\)[^$/: \t\n()]+"
+  "Regexp used to highlight root ns in REPL buffers.")
+
+(defvar-local miracle-repl--ns-forms-plist nil
+  "Plist holding ns->ns-form mappings within each connection.")
+
+(defvar-local miracle-repl--ns-roots nil
+  "List holding all past root namespaces seen during interactive eval.")
+
+(defvar-local miracle-repl--root-ns-regexp nil
+  "Cache of root ns regexp in REPLs.")
+
 (make-variable-buffer-local 'miracle-session)
 (make-variable-buffer-local 'miracle-requests)
 (make-variable-buffer-local 'miracle-requests-counter)
@@ -152,17 +164,71 @@ that miracle is is connected to.")
                collect `(,key (cdr (assoc ,(format "%s" key) ,response))))
      ,@body))
 
+(defun miracle-eldoc-beginning-of-sexp ()
+  "Move to the beginning of current sexp.
+
+Return the number of nested sexp the point was over or after.  Return nil
+if the maximum number of sexps to skip is exceeded."
+  (let ((parse-sexp-ignore-comments t)
+        (num-skipped-sexps 0))
+    (condition-case _
+        (progn
+          ;; First account for the case the point is directly over a
+          ;; beginning of a nested sexp.
+          (condition-case _
+              (let ((p (point)))
+                (forward-sexp -1)
+                (forward-sexp 1)
+                (when (< (point) p)
+                  (setq num-skipped-sexps 1)))
+            (error))
+          (while
+              (let ((p (point)))
+                (forward-sexp -1)
+                (when (< (point) p)
+                  (setq num-skipped-sexps
+                        (unless (and 30
+                                     (>= num-skipped-sexps
+                                         30))
+                          ;; Without the above guard,
+                          ;; `miracle-eldoc-beginning-of-sexp' could traverse the
+                          ;; whole buffer when the point is not within a
+                          ;; list. This behavior is problematic especially with
+                          ;; a buffer containing a large number of
+                          ;; non-expressions like a REPL buffer.
+                          (1+ num-skipped-sexps)))))))
+      (error))
+    num-skipped-sexps))
+
+(defun miracle-in-comment-p ()
+  "Return non-nil if point is in a comment."
+  (let ((beg (save-excursion (beginning-of-defun) (point))))
+    (nth 4 (parse-partial-sexp beg (point)))))
+
+(defun miracle-symbol-at-point (&optional look-back)
+  "Return the name of the symbol at point, otherwise nil.
+Ignores the REPL prompt.  If LOOK-BACK is non-nil, move backwards trying to
+find a symbol if there isn't one at point."
+  (or (when-let* ((str (thing-at-point 'symbol)))
+        (substring-no-properties str))
+      (when look-back
+        (save-excursion
+          (ignore-errors
+            (while (not (looking-at "\\sw\\|\\s_\\|\\`"))
+              (forward-sexp -1)))
+          (miracle-symbol-at-point)))))
+
 (defun miracle-eldoc-info-at-sexp-beginning ()
   "Return eldoc info for first symbol in the sexp."
   (save-excursion
-    (when-let* ((beginning-of-sexp (cider-eldoc-beginning-of-sexp))
+    (when-let* ((beginning-of-sexp (miracle-eldoc-beginning-of-sexp))
                 ;; If we are at the beginning of function name, this will be -1
                 (argument-index (max 0 (1- beginning-of-sexp))))
       (unless (or (memq (or (char-before (point)) 0)
                         '(?\" ?\{ ?\[))
-                  (cider-in-comment-p))
+                  (miracle-in-comment-p))
         (when-let* ((eldoc-info (miracle-eval-eldoc
-                                 (cider-symbol-at-point))))
+                                 (miracle-symbol-at-point))))
           eldoc-info)))))
 
 ;;; Bencode
@@ -321,12 +387,75 @@ mixed newlines of the clojure core packages."
                   (match-string-no-properties 4))))))
     ns))
 
+(defun miracle--text-or-limits (bounds start end)
+  "Returns the substring or the bounds of text.
+If BOUNDS is non-nil, returns the list (START END) of character
+positions.  Else returns the substring from START to END."
+  (funcall (if bounds #'list #'buffer-substring-no-properties)
+           start end))
+
+(defun miracle-defun-at-point (&optional bounds)
+  "Return the text of the top level sexp at point.
+If BOUNDS is non-nil, return a list of its starting and ending position
+instead."
+  (save-excursion
+    (save-match-data
+      (end-of-defun)
+      (let ((end (point)))
+        (clojure-backward-logical-sexp 1)
+        (miracle--text-or-limits bounds (point) end)))))
+
 (defun miracle-ns-form ()
   "Retrieve the ns form."
   (when (miracle-find-ns)
     (save-excursion
       (goto-char (match-beginning 0))
-      (cider-defun-at-point))))
+      (miracle-defun-at-point))))
+
+(defun miracle-ns-form-p (form)
+  "Check if FORM is an ns form."
+  (string-match-p "^[[:space:]]*\(ns\\([[:space:]]*$\\|[[:space:]]+\\)" form))
+
+(defun miracle-ns-from-form (ns-form)
+  "Get ns substring from NS-FORM."
+  (when (string-match "^[ \t\n]*\(ns[ \t\n]+\\([^][ \t\n(){}]+\\)" ns-form)
+    (match-string-no-properties 1 ns-form)))
+
+(defun miracle-repl--ns-form-changed-p (ns-form connection)
+  "Return non-nil if NS-FORM for CONNECTION changed since last eval."
+  (when-let* ((ns (miracle-ns-from-form ns-form)))
+    (not (string= ns-form
+                  (lax-plist-get
+                   (buffer-local-value 'miracle-repl--ns-forms-plist connection)
+                   ns)))))
+
+(defun miracle-repl--cache-ns-form (ns-form connection)
+  "Given NS-FORM cache root ns in CONNECTION."
+  (with-current-buffer connection
+    (when-let* ((ns (miracle-ns-from-form ns-form)))
+      ;; cache ns-form
+      (setq miracle-repl--ns-forms-plist
+            (lax-plist-put miracle-repl--ns-forms-plist ns ns-form))
+      ;; cache ns roots regexp
+      (when (string-match "\\([^.]+\\)" ns)
+        (let ((root (match-string-no-properties 1 ns)))
+          (unless (member root miracle-repl--ns-roots)
+            (push root miracle-repl--ns-roots)
+            (let ((roots (mapconcat
+                          ;; Replace _ or - with regexp pattern to accommodate "raw" namespaces
+                          (lambda (r) (replace-regexp-in-string "[_-]+" "[_-]+" r))
+                          miracle-repl--ns-roots "\\|")))
+              (setq miracle-repl--root-ns-regexp
+                    (format miracle-repl--root-ns-highlight-template roots)))))))))
+
+(defun miracle-eldoc--convert-ns-keywords (thing)
+  "Convert THING values that match ns macro keywords to function names."
+  (pcase thing
+    (":import" "clojure.core/import")
+    (":refer-clojure" "clojure.core/refer-clojure")
+    (":use" "clojure.core/use")
+    (":refer" "clojure.core/refer")
+    (_ thing)))
 
 (defun miracle--prep-interactive-eval (form connection)
   "Prepare the environment for an interactive eval of FORM in CONNECTION.
@@ -336,14 +465,13 @@ ns declaration itself.  Clear any compilation highlights and kill the error
 window."
   (let ((cur-ns-form (miracle-ns-form)))
     (when (and cur-ns-form
-               (not (cider-ns-form-p form))
-               (cider-repl--ns-form-changed-p cur-ns-form
-                                              (get-buffer
-                                               miracle-repl-buffer)))
-      (when cider-auto-track-ns-form-changes
-        (miracle-send-sync-request (format "(do %s)" cur-ns-form) connection))
+               (not (miracle-ns-form-p form))
+               (miracle-repl--ns-form-changed-p cur-ns-form
+                                                (get-buffer
+                                                 miracle-repl-buffer)))
+      (miracle-send-sync-request (format "(do %s)" cur-ns-form) connection)
       ;; cache at the end, in case of errors
-      (cider-repl--cache-ns-form cur-ns-form connection))))
+      (miracle-repl--cache-ns-form cur-ns-form connection))))
 
 (defun miracle-make-response-handler ()
   "Returns a function that will be called when event is received."
@@ -586,7 +714,7 @@ at the top of the file."
 (defun miracle-eval-eldoc (symbol)
   "Internal function to actually ask for symbol eldoc via nrepl protocol."
   (when miracle-use-orchardia
-    (let ((thing (cider-eldoc--convert-ns-keywords symbol)))
+    (let ((thing (miracle-eldoc--convert-ns-keywords symbol)))
       (when (and thing
                  ;; ignore empty strings
                  (not (string= thing ""))
@@ -607,7 +735,7 @@ at the top of the file."
          ((string-match-p "^[A-Z].+\\.$" thing) (format "%s %s"
                                                         thing
                                                         "([args*])"))
-         (t (let* ((ns (cider-current-ns))
+         (t (let* ((ns (miracle-find-ns))
                    (request (format
                              "(do (require 'nrepl.middleware.info
                      '[clojure.string :as str])
@@ -742,8 +870,8 @@ as path can be remote location. For remote paths, use absolute path."
     (let ((n (buffer-file-name)))
       (read-file-name "Load file: " nil nil nil
                       (and n (file-name-nondirectory n))))))
-  (when-let* ((ns-form  (cider-ns-form)))
-    (cider-repl--cache-ns-form ns-form (get-buffer "*miracle*")))
+  (when-let* ((ns-form  (miracle-ns-form)))
+    (miracle-repl--cache-ns-form ns-form (get-buffer "*miracle*")))
   (let ((full-path (convert-standard-filename (expand-file-name path))))
     (miracle-input-sender
      (get-buffer-process miracle-repl-buffer)
@@ -983,7 +1111,7 @@ eldoc mode has to be enabled for this to have any effect."
                                         :macro \"<m>\"}))
                (mapv (comp seq (juxt :candidate :type)))
                seq)))"
-           (cider-current-ns)
+           (miracle-find-ns)
            arg)
           "*miracle-connection*"))))
       (annotation (company-miracle-backend--annotation arg)))))
