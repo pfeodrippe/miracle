@@ -165,7 +165,8 @@ that miracle is is connected to.")
      ,@body))
 
 (defun miracle-eldoc-beginning-of-sexp ()
-  "Move to the beginning of current sexp.
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Move to the beginning of current sexp.
 
 Return the number of nested sexp the point was over or after.  Return nil
 if the maximum number of sexps to skip is exceeded."
@@ -201,12 +202,14 @@ if the maximum number of sexps to skip is exceeded."
     num-skipped-sexps))
 
 (defun miracle-in-comment-p ()
-  "Return non-nil if point is in a comment."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Return non-nil if point is in a comment."
   (let ((beg (save-excursion (beginning-of-defun) (point))))
     (nth 4 (parse-partial-sexp beg (point)))))
 
 (defun miracle-symbol-at-point (&optional look-back)
-  "Return the name of the symbol at point, otherwise nil.
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Return the name of the symbol at point, otherwise nil.
 Ignores the REPL prompt.  If LOOK-BACK is non-nil, move backwards trying to
 find a symbol if there isn't one at point."
   (or (when-let* ((str (thing-at-point 'symbol)))
@@ -219,7 +222,7 @@ find a symbol if there isn't one at point."
           (miracle-symbol-at-point)))))
 
 (defun miracle-eldoc-info-at-sexp-beginning ()
-  "Return eldoc info for first symbol in the sexp."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES."
   (save-excursion
     (when-let* ((beginning-of-sexp (miracle-eldoc-beginning-of-sexp))
                 ;; If we are at the beginning of function name, this will be -1
@@ -388,14 +391,16 @@ mixed newlines of the clojure core packages."
     ns))
 
 (defun miracle--text-or-limits (bounds start end)
-  "Returns the substring or the bounds of text.
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Returns the substring or the bounds of text.
 If BOUNDS is non-nil, returns the list (START END) of character
 positions.  Else returns the substring from START to END."
   (funcall (if bounds #'list #'buffer-substring-no-properties)
            start end))
 
 (defun miracle-defun-at-point (&optional bounds)
-  "Return the text of the top level sexp at point.
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Return the text of the top level sexp at point.
 If BOUNDS is non-nil, return a list of its starting and ending position
 instead."
   (save-excursion
@@ -406,23 +411,27 @@ instead."
         (miracle--text-or-limits bounds (point) end)))))
 
 (defun miracle-ns-form ()
-  "Retrieve the ns form."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Retrieve the ns form."
   (when (miracle-find-ns)
     (save-excursion
       (goto-char (match-beginning 0))
       (miracle-defun-at-point))))
 
 (defun miracle-ns-form-p (form)
-  "Check if FORM is an ns form."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Check if FORM is an ns form."
   (string-match-p "^[[:space:]]*\(ns\\([[:space:]]*$\\|[[:space:]]+\\)" form))
 
 (defun miracle-ns-from-form (ns-form)
-  "Get ns substring from NS-FORM."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Get ns substring from NS-FORM."
   (when (string-match "^[ \t\n]*\(ns[ \t\n]+\\([^][ \t\n(){}]+\\)" ns-form)
     (match-string-no-properties 1 ns-form)))
 
 (defun miracle-repl--ns-form-changed-p (ns-form connection)
-  "Return non-nil if NS-FORM for CONNECTION changed since last eval."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Return non-nil if NS-FORM for CONNECTION changed since last eval."
   (when-let* ((ns (miracle-ns-from-form ns-form)))
     (not (string= ns-form
                   (lax-plist-get
@@ -430,7 +439,8 @@ instead."
                    ns)))))
 
 (defun miracle-repl--cache-ns-form (ns-form connection)
-  "Given NS-FORM cache root ns in CONNECTION."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Given NS-FORM cache root ns in CONNECTION."
   (with-current-buffer connection
     (when-let* ((ns (miracle-ns-from-form ns-form)))
       ;; cache ns-form
@@ -449,7 +459,8 @@ instead."
                     (format miracle-repl--root-ns-highlight-template roots)))))))))
 
 (defun miracle-eldoc--convert-ns-keywords (thing)
-  "Convert THING values that match ns macro keywords to function names."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Convert THING values that match ns macro keywords to function names."
   (pcase thing
     (":import" "clojure.core/import")
     (":refer-clojure" "clojure.core/refer-clojure")
@@ -458,7 +469,8 @@ instead."
     (_ thing)))
 
 (defun miracle--prep-interactive-eval (form connection)
-  "Prepare the environment for an interactive eval of FORM in CONNECTION.
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Prepare the environment for an interactive eval of FORM in CONNECTION.
 Ensure the current ns declaration has been evaluated (so that the ns
 containing FORM exists).  Cache ns-form in the current buffer unless FORM is
 ns declaration itself.  Clear any compilation highlights and kill the error
@@ -501,6 +513,7 @@ window."
                                 (comint-output-filter process (format miracle-repl-prompt-format miracle-buffer-ns)))))))
 
 (defun miracle-send-sync-request (str connection &optional abort-on-input)
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES."
   (let* ((time0 (current-time))
          value0
          status0)
@@ -712,7 +725,8 @@ at the top of the file."
    (format "(do (require 'clojure.repl) (clojure.repl/doc %s))" symbol)))
 
 (defun miracle-eval-eldoc (symbol)
-  "Internal function to actually ask for symbol eldoc via nrepl protocol."
+  "CODE TAKEN FROM CIDER AND MODIFIED FOR OUR PURPOSES.
+Internal function to actually ask for symbol eldoc via nrepl protocol."
   (when miracle-use-orchardia
     (let ((thing (miracle-eldoc--convert-ns-keywords symbol)))
       (when (and thing
